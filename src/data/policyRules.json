@@ -1,0 +1,98 @@
+{
+  "POL-PE-001": {
+    "id": "POL-PE-001",
+    "title": "Permanent Establishment Trigger Assessment",
+    "family": "PE",
+    "countries": ["ES", "DE", "GB"],
+    "eventTypes": ["contractor_conversion", "relocation"],
+    "severity": "HIGH",
+    "confidence": 0.85,
+    "description": "Illustrative: Worker presence above threshold may indicate taxable permanent establishment exposure in-country.",
+    "thresholdKey": "pe_worker_count",
+    "evidenceIds": ["EVD-001", "EVD-002"]
+  },
+  "POL-MC-001": {
+    "id": "POL-MC-001",
+    "title": "Contractor Misclassification Screen",
+    "family": "Misclassification",
+    "countries": ["ES", "DE", "GB", "US"],
+    "eventTypes": ["contractor_conversion"],
+    "severity": "HIGH",
+    "confidence": 0.90,
+    "description": "Illustrative: Contractors exhibiting employment indicators (exclusive engagement, direction, tools) require reclassification review prior to conversion.",
+    "thresholdKey": "contractor_batch_size",
+    "evidenceIds": ["EVD-003", "EVD-004"]
+  },
+  "POL-TRM-001": {
+    "id": "POL-TRM-001",
+    "title": "Clustered Termination Risk Protocol",
+    "family": "Termination",
+    "countries": ["DE", "ES"],
+    "eventTypes": ["termination"],
+    "severity": "CRITICAL",
+    "confidence": 0.95,
+    "description": "Illustrative: Multiple terminations within a single quarter in protected jurisdictions may trigger collective consultation requirements and extended notice obligations.",
+    "thresholdKey": "termination_cluster",
+    "evidenceIds": ["EVD-005", "EVD-006"]
+  },
+  "POL-REL-001": {
+    "id": "POL-REL-001",
+    "title": "Cross-Border Relocation Compliance Review",
+    "family": "Relocation",
+    "countries": ["GB", "US"],
+    "eventTypes": ["relocation"],
+    "severity": "MEDIUM",
+    "confidence": 0.75,
+    "description": "Illustrative: Inbound relocations may require right-to-work verification, shadow payroll analysis, and benefit re-enrollment prior to start date.",
+    "thresholdKey": "relocation_count",
+    "evidenceIds": ["EVD-007", "EVD-008"]
+  },
+  "POL-EQ-001": {
+    "id": "POL-EQ-001",
+    "title": "Equity Award Cross-Border Friction Assessment",
+    "family": "Equity",
+    "countries": ["GB", "DE"],
+    "eventTypes": ["relocation", "eor_onboarding"],
+    "severity": "MEDIUM",
+    "confidence": 0.70,
+    "description": "Illustrative: Equity grants to workers in high-friction jurisdictions require withholding review and may require local securities registration.",
+    "thresholdKey": "equity_grant_count",
+    "evidenceIds": ["EVD-009", "EVD-010"]
+  },
+  "POL-BEN-001": {
+    "id": "POL-BEN-001",
+    "title": "Benefits Continuation Liability Window",
+    "family": "Benefits",
+    "countries": ["DE", "ES", "GB"],
+    "eventTypes": ["termination"],
+    "severity": "MEDIUM",
+    "confidence": 0.80,
+    "description": "Illustrative: Post-termination benefit obligations including continuation periods vary by jurisdiction and worker tenure. Accrued obligations create a liability tail.",
+    "thresholdKey": "termination_count",
+    "evidenceIds": ["EVD-011", "EVD-012"]
+  },
+  "POL-PAY-001": {
+    "id": "POL-PAY-001",
+    "title": "Payroll Cutoff Clustering Alert",
+    "family": "Payroll",
+    "countries": ["ES", "DE", "GB", "US"],
+    "eventTypes": ["contractor_conversion", "eor_onboarding", "termination"],
+    "severity": "LOW",
+    "confidence": 0.65,
+    "description": "Illustrative: Multiple events landing near the same payroll cutoff window may cause processing delays, incorrect period calculations, and retroactive adjustments.",
+    "thresholdKey": "payroll_cluster",
+    "evidenceIds": ["EVD-013"]
+  },
+  "POL-ENT-001": {
+    "id": "POL-ENT-001",
+    "title": "Entity Formation Threshold Monitor",
+    "family": "Entity",
+    "countries": ["ES", "DE", "GB", "US"],
+    "eventTypes": ["eor_onboarding", "contractor_conversion"],
+    "severity": "MEDIUM",
+    "confidence": 0.75,
+    "description": "Illustrative: EOR headcount approaching jurisdictional thresholds suggests own-entity formation may be more cost-effective and reduce dependency risk.",
+    "thresholdKey": "eor_to_entity",
+    "evidenceIds": ["EVD-014"]
+  }
+}
