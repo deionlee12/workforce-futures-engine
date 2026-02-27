@@ -1,0 +1,65 @@
+{
+  "pe_worker_count": {
+    "id": "pe_worker_count",
+    "label": "PE Worker Count Threshold",
+    "description": "Workers in-country that may create permanent establishment exposure",
+    "thresholdByCountry": {
+      "ES": 4,
+      "DE": 5,
+      "GB": 8,
+      "US": 15
+    }
+  },
+  "contractor_batch_size": {
+    "id": "contractor_batch_size",
+    "label": "Contractor Conversion Batch Size",
+    "description": "Simultaneous contractor conversions that trigger enhanced misclassification review",
+    "globalThreshold": 5
+  },
+  "termination_cluster": {
+    "id": "termination_cluster",
+    "label": "Termination Cluster Threshold",
+    "description": "Terminations in a single quarter that may require collective consultation",
+    "thresholdByCountry": {
+      "DE": 3,
+      "ES": 5,
+      "GB": 10,
+      "US": 20
+    }
+  },
+  "relocation_count": {
+    "id": "relocation_count",
+    "label": "Concurrent Relocation Count",
+    "description": "Concurrent relocations requiring visa and right-to-work processing capacity",
+    "globalThreshold": 3
+  },
+  "equity_grant_count": {
+    "id": "equity_grant_count",
+    "label": "Cross-Border Equity Grant Volume",
+    "description": "Equity grants to cross-border workers requiring withholding review",
+    "globalThreshold": 5
+  },
+  "termination_count": {
+    "id": "termination_count",
+    "label": "Termination Benefits Tail Count",
+    "description": "Terminations generating active benefits continuation liability",
+    "globalThreshold": 2
+  },
+  "payroll_cluster": {
+    "id": "payroll_cluster",
+    "label": "Payroll Event Clustering",
+    "description": "Events within 5 days of payroll cutoff in any single country",
+    "globalThreshold": 3
+  },
+  "eor_to_entity": {
+    "id": "eor_to_entity",
+    "label": "EOR-to-Entity Trigger",
+    "description": "EOR headcount threshold suggesting own-entity formation may be more efficient",
+    "thresholdByCountry": {
+      "ES": 15,
+      "DE": 20,
+      "GB": 25,
+      "US": 50
+    }
+  }
+}

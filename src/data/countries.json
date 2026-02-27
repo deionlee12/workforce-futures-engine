@@ -1,0 +1,70 @@
+{
+  "ES": {
+    "name": "Spain",
+    "code": "ES",
+    "region": "EMEA",
+    "peSensitivity": 0.85,
+    "misclassSensitivity": 0.90,
+    "benefitsTailMultiplier": 0.35,
+    "payrollCutoffDay": 20,
+    "terminationNoticeDays": 90,
+    "entityThresholds": {
+      "contractorToEmployeeTrigger": 3,
+      "eorToEntityTrigger": 15,
+      "peTriggerWorkers": 4
+    },
+    "visaRequired": false,
+    "equityComplexity": "MEDIUM"
+  },
+  "DE": {
+    "name": "Germany",
+    "code": "DE",
+    "region": "EMEA",
+    "peSensitivity": 0.80,
+    "misclassSensitivity": 0.85,
+    "benefitsTailMultiplier": 0.40,
+    "payrollCutoffDay": 25,
+    "terminationNoticeDays": 120,
+    "entityThresholds": {
+      "contractorToEmployeeTrigger": 5,
+      "eorToEntityTrigger": 20,
+      "peTriggerWorkers": 5
+    },
+    "visaRequired": false,
+    "equityComplexity": "HIGH"
+  },
+  "GB": {
+    "name": "United Kingdom",
+    "code": "GB",
+    "region": "EMEA",
+    "peSensitivity": 0.60,
+    "misclassSensitivity": 0.70,
+    "benefitsTailMultiplier": 0.25,
+    "payrollCutoffDay": 28,
+    "terminationNoticeDays": 30,
+    "entityThresholds": {
+      "contractorToEmployeeTrigger": 8,
+      "eorToEntityTrigger": 25,
+      "peTriggerWorkers": 8
+    },
+    "visaRequired": true,
+    "equityComplexity": "HIGH"
+  },
+  "US": {
+    "name": "United States",
+    "code": "US",
+    "region": "Americas",
+    "peSensitivity": 0.45,
+    "misclassSensitivity": 0.75,
+    "benefitsTailMultiplier": 0.20,
+    "payrollCutoffDay": 15,
+    "terminationNoticeDays": 0,
+    "entityThresholds": {
+      "contractorToEmployeeTrigger": 10,
+      "eorToEntityTrigger": 50,
+      "peTriggerWorkers": 15
+    },
+    "visaRequired": false,
+    "equityComplexity": "MEDIUM"
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "contractor_conversion": [
+    {
+      "stepId": "CC-01",
+      "title": "Misclassification Pre-screen",
+      "owner": "Legal / Compliance",
+      "daysRequired": 5,
+      "dependencies": [],
+      "systemsTouched": ["ComplianceHub", "LegalDesk"]
+    },
+    {
+      "stepId": "CC-02",
+      "title": "Entity Threshold Review",
+      "owner": "Tax / Finance",
+      "daysRequired": 3,
+      "dependencies": ["CC-01"],
+      "systemsTouched": ["TaxEngine", "EntityRegister"]
+    },
+    {
+      "stepId": "CC-03",
+      "title": "EOR Agreement Drafting",
+      "owner": "HR Operations",
+      "daysRequired": 7,
+      "dependencies": ["CC-01"],
+      "systemsTouched": ["ContractMgmt", "HRISCore"]
+    },
+    {
+      "stepId": "CC-04",
+      "title": "Payroll Enrollment",
+      "owner": "Payroll",
+      "daysRequired": 3,
+      "dependencies": ["CC-03"],
+      "systemsTouched": ["PayrollEngine", "BenefitsAdmin"]
+    },
+    {
+      "stepId": "CC-05",
+      "title": "Benefits Configuration",
+      "owner": "Benefits Admin",
+      "daysRequired": 5,
+      "dependencies": ["CC-04"],
+      "systemsTouched": ["BenefitsAdmin", "HealthProvider"]
+    }
+  ],
+  "termination": [
+    {
+      "stepId": "TRM-01",
+      "title": "Notice Period Calculation",
+      "owner": "HR / Legal",
+      "daysRequired": 2,
+      "dependencies": [],
+      "systemsTouched": ["HRISCore", "LegalDesk"]
+    },
+    {
+      "stepId": "TRM-02",
+      "title": "Severance Computation",
+      "owner": "Compensation / Finance",
+      "daysRequired": 3,
+      "dependencies": ["TRM-01"],
+      "systemsTouched": ["CompEngine", "PayrollEngine"]
+    },
+    {
+      "stepId": "TRM-03",
+      "title": "Benefits Wind-Down Schedule",
+      "owner": "Benefits Admin",
+      "daysRequired": 5,
+      "dependencies": ["TRM-01"],
+      "systemsTouched": ["BenefitsAdmin", "HealthProvider"]
+    },
+    {
+      "stepId": "TRM-04",
+      "title": "Equity Vesting Review",
+      "owner": "Equity / Legal",
+      "daysRequired": 7,
+      "dependencies": ["TRM-02"],
+      "systemsTouched": ["EquityMgmt", "LegalDesk"]
+    },
+    {
+      "stepId": "TRM-05",
+      "title": "Final Pay Processing",
+      "owner": "Payroll",
+      "daysRequired": 3,
+      "dependencies": ["TRM-02", "TRM-03"],
+      "systemsTouched": ["PayrollEngine"]
+    },
+    {
+      "stepId": "TRM-06",
+      "title": "Regulatory Filing (if collective)",
+      "owner": "Legal / Compliance",
+      "daysRequired": 30,
+      "dependencies": ["TRM-01"],
+      "systemsTouched": ["ComplianceHub", "ExternalRegulator"]
+    }
+  ],
+  "relocation": [
+    {
+      "stepId": "REL-01",
+      "title": "Right-to-Work / Visa Assessment",
+      "owner": "Immigration / Legal",
+      "daysRequired": 14,
+      "dependencies": [],
+      "systemsTouched": ["ImmigrationTracker", "LegalDesk"]
+    },
+    {
+      "stepId": "REL-02",
+      "title": "Shadow Payroll Analysis",
+      "owner": "Tax / Payroll",
+      "daysRequired": 5,
+      "dependencies": ["REL-01"],
+      "systemsTouched": ["TaxEngine", "PayrollEngine"]
+    },
+    {
+      "stepId": "REL-03",
+      "title": "Equity Withholding Review",
+      "owner": "Equity / Tax",
+      "daysRequired": 7,
+      "dependencies": ["REL-01"],
+      "systemsTouched": ["EquityMgmt", "TaxEngine"]
+    },
+    {
+      "stepId": "REL-04",
+      "title": "Benefits Re-enrollment",
+      "owner": "Benefits Admin",
+      "daysRequired": 5,
+      "dependencies": ["REL-02"],
+      "systemsTouched": ["BenefitsAdmin"]
+    },
+    {
+      "stepId": "REL-05",
+      "title": "Home / Host Tax Coordination",
+      "owner": "Tax",
+      "daysRequired": 10,
+      "dependencies": ["REL-02", "REL-03"],
+      "systemsTouched": ["TaxEngine", "ExternalAdvisor"]
+    }
+  ],
+  "eor_onboarding": [
+    {
+      "stepId": "EOR-01",
+      "title": "EOR Provider Selection",
+      "owner": "HR / Procurement",
+      "daysRequired": 5,
+      "dependencies": [],
+      "systemsTouched": ["VendorMgmt"]
+    },
+    {
+      "stepId": "EOR-02",
+      "title": "Employment Agreement Localisation",
+      "owner": "Legal / HR",
+      "daysRequired": 7,
+      "dependencies": ["EOR-01"],
+      "systemsTouched": ["ContractMgmt", "LegalDesk"]
+    },
+    {
+      "stepId": "EOR-03",
+      "title": "Payroll Setup",
+      "owner": "Payroll",
+      "daysRequired": 5,
+      "dependencies": ["EOR-02"],
+      "systemsTouched": ["PayrollEngine"]
+    },
+    {
+      "stepId": "EOR-04",
+      "title": "Benefits Enrollment",
+      "owner": "Benefits Admin",
+      "daysRequired": 3,
+      "dependencies": ["EOR-03"],
+      "systemsTouched": ["BenefitsAdmin"]
+    }
+  ]
+}

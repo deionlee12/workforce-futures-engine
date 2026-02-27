@@ -1,0 +1,37 @@
+{
+  "eventTypeBase": {
+    "contractor_conversion": {
+      "ES": 0.30,
+      "DE": 0.28,
+      "GB": 0.18,
+      "US": 0.22
+    },
+    "termination": {
+      "ES": 0.42,
+      "DE": 0.55,
+      "GB": 0.20,
+      "US": 0.10
+    },
+    "relocation": {
+      "ES": 0.15,
+      "DE": 0.18,
+      "GB": 0.22,
+      "US": 0.12
+    },
+    "eor_onboarding": {
+      "ES": 0.12,
+      "DE": 0.14,
+      "GB": 0.10,
+      "US": 0.08
+    }
+  },
+  "workerTypeMultiplier": {
+    "contractor": 1.0,
+    "eor_employee": 1.15,
+    "direct_employee": 1.25
+  },
+  "quantityScaling": {
+    "breakpoints": [1, 5, 10, 20],
+    "multipliers": [1.0, 0.95, 0.90, 0.85]
+  }
+}
