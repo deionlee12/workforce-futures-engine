@@ -11,6 +11,7 @@ interface SignalCardProps {
   icon?: React.ReactNode;
   modeled?: boolean;
   tooltip?: string;
+  labelClassName?: string;
 }
 
 const accentBorder: Record<string, string> = {
@@ -31,6 +32,12 @@ const valueClasses: Record<string, string> = {
   orange: 'text-[#FB923C]',
 };
 
+const infoButtonClass =
+  'flex-shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-md border border-[#2D3450] ' +
+  'bg-[#141829]/60 text-white/70 hover:text-white/95 hover:bg-[#1A1F35] hover:border-[#3D4668] ' +
+  'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6FD4] ' +
+  'focus-visible:ring-offset-1 focus-visible:ring-offset-[#0F1117] leading-none text-[11px]';
+
 export default function SignalCard({
   label,
   value,
@@ -39,6 +46,7 @@ export default function SignalCard({
   icon,
   modeled,
   tooltip,
+  labelClassName,
 }: SignalCardProps) {
   return (
     <div
@@ -46,11 +54,11 @@ export default function SignalCard({
     >
       <div className="flex items-center gap-1.5 text-[#A8B4C8] text-xs font-medium uppercase tracking-wider">
         {icon && <span className="opacity-70">{icon}</span>}
-        <span className="flex-1 truncate">{label}</span>
+        <span className={labelClassName ?? 'flex-1 truncate'}>{label}</span>
         {tooltip && (
           <Tooltip content={tooltip} position="above">
             <button
-              className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#A8B4C8]/50 hover:text-[#C4B5FD] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7B6FD4] rounded leading-none text-[11px]"
+              className={infoButtonClass}
               aria-label={`Definition: ${label}`}
             >
               ℹ

@@ -9,6 +9,8 @@ interface DecisionAssistantProps {
   isBriefLoading: boolean;
   activeView: 'executive' | 'operator';
   liveOFS: number | null;
+  aiEnabled: boolean;
+  onEnableAiNarration: () => void;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ interface Message {
 const QUICK_PROMPTS = [
   'What is the dominant risk driver?',
   'What should I act on first?',
-  'Explain the OFS score',
+  'Explain the WFS score',
   'How can I reduce the liability tail?',
 ];
 
@@ -48,6 +50,10 @@ const DRIVER_COLORS: Record<string, string> = {
   Execution: '#FCD34D',
   Confidence: '#7DD3FC',
 };
+
+function displayDriverLabel(driver: string): string {
+  return driver === 'Exposure' ? 'Tax Presence Exposure' : driver;
+}
 
 const btnFocus =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6FD4] ' +
@@ -185,11 +191,12 @@ function ExecutiveBriefPanel({
   }
 
   const driverColor = DRIVER_COLORS[brief.dominantDriver] ?? '#A8B4C8';
+  const driverLabel = displayDriverLabel(brief.dominantDriver);
   const displayOFS = liveOFS ?? brief.ofScore;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-      {/* OFS badge + dominant driver */}
+      {/* WFS badge + dominant driver */}
       <div className="flex items-center gap-3">
         <div
           className="rounded-xl px-4 py-2 text-center"
@@ -198,7 +205,7 @@ function ExecutiveBriefPanel({
           <div className="text-2xl font-bold tabular-nums" style={{ color: driverColor }}>
             {Math.round(displayOFS)}
           </div>
-          <div className="text-[10px] text-[#8899B2] mt-0.5">OFS</div>
+          <div className="text-[10px] text-[#8899B2] mt-0.5">WFS</div>
         </div>
         <div className="flex-1">
           <div className="text-[10px] text-[#8899B2] uppercase tracking-wider mb-1">Dominant Driver</div>
@@ -206,7 +213,7 @@ function ExecutiveBriefPanel({
             className="text-sm font-semibold px-3 py-1 rounded-lg"
             style={{ color: driverColor, background: `${driverColor}18`, border: `1px solid ${driverColor}30` }}
           >
-            {brief.dominantDriver}
+            {driverLabel}
           </span>
           <div className="text-[10px] text-[#8899B2] mt-1">
             Input confidence: {Math.round(brief.inputConfidence)}%
@@ -422,7 +429,7 @@ function QAChatPanel({ evaluation }: { evaluation: ScenarioEvaluation | null }) 
       {/* Disclaimer */}
       <div className="px-4 pb-2 flex-shrink-0">
         <p className="text-[#7A8AA3] text-[10px] text-center leading-relaxed">
-          Narrates engine output · Cites evidence IDs · Not legal advice
+          AI-generated summary · Evidence-linked
         </p>
       </div>
 
@@ -469,24 +476,20 @@ export default function DecisionAssistant({
   isBriefLoading,
   activeView,
   liveOFS,
+  aiEnabled,
+  onEnableAiNarration,
 }: DecisionAssistantProps) {
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2D3450] flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-2 h-2 rounded-full flex-shrink-0"
-            style={{
-              background: evaluation ? '#4ADE9A' : '#8899B2',
-              boxShadow: evaluation ? '0 0 6px #4ADE9A70' : 'none',
-            }}
-          />
+        <div className="flex items-center">
           <h2 className="text-[#F1F5F9] text-sm font-semibold">Decision Assistant</h2>
         </div>
-        <p className="text-[#8899B2] text-xs mt-0.5 ml-4">
-          {activeView === 'executive'
+        <p className="text-[#8899B2] text-xs mt-0.5">
+          {!aiEnabled
+            ? 'AI narration off · Deterministic signals only'
+            : activeView === 'executive'
             ? evaluation
               ? 'Executive brief · Impact active'
               : 'Preview impact to generate brief'
@@ -496,8 +499,25 @@ export default function DecisionAssistant({
         </p>
       </div>
 
+      {!aiEnabled && (
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="max-w-[260px] text-center space-y-3">
+            <p className="text-[#A8B4C8] text-xs leading-relaxed">
+              AI narration is optional. Deterministic signals remain available across this scenario.
+            </p>
+            <button
+              onClick={onEnableAiNarration}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all ${btnFocus}`}
+              style={{ background: 'linear-gradient(135deg, #7B6FD4 0%, #5F54B0 100%)' }}
+            >
+              Enable AI narration
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Executive view: auto-brief panel */}
-      {activeView === 'executive' && (
+      {aiEnabled && activeView === 'executive' && (
         <ExecutiveBriefPanel
           brief={initialBrief}
           isLoading={isBriefLoading}
@@ -506,7 +526,7 @@ export default function DecisionAssistant({
       )}
 
       {/* Operator view: Q&A chat */}
-      {activeView === 'operator' && (
+      {aiEnabled && activeView === 'operator' && (
         <QAChatPanel evaluation={evaluation} />
       )}
     </div>

@@ -91,7 +91,7 @@ export interface SignalSummary {
   headcountDelta: number;
   riskClusterCount: number;
   visaLoad: number;
-  /** Operational Friction Score 0–100 (renamed from wfs) */
+  /** Workforce Friction Score (WFS) 0–100 */
   ofs: number;
   /** Governance Load Index 0–100 */
   gli: number;

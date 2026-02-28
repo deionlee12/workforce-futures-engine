@@ -49,6 +49,7 @@ export default function ExplainabilityDrawer({
   evidence,
   filterPolicyIds,
 }: ExplainabilityDrawerProps) {
+  const [expandedEvidence, setExpandedEvidence] = React.useState<Record<string, boolean>>({});
   if (!isOpen) return null;
 
   const evidenceMap = new Map<string, Evidence>();
@@ -93,8 +94,7 @@ export default function ExplainabilityDrawer({
 
         {/* Disclaimer */}
         <div className="mx-6 mt-4 rounded-lg bg-[#1A1F35] border border-[#2D3450] px-4 py-2.5 text-[#A8B4C8] text-xs">
-          Demo model. Illustrative policies. Not legal advice. Confidence scores reflect model
-          calibration, not legal certainty.
+          Preview build. Confidence scores reflect model calibration. Policy IDs are indicative.
         </div>
 
         {/* Filter indicator */}
@@ -128,6 +128,8 @@ export default function ExplainabilityDrawer({
               const triggerEvidence = trigger.evidenceIds
                 .map((id) => evidenceMap.get(id))
                 .filter(Boolean) as Evidence[];
+              const triggerKey = `${trigger.policyId}:${trigger.country ?? 'global'}`;
+              const isEvidenceOpen = !!expandedEvidence[triggerKey];
 
               return (
                 <div
@@ -180,18 +182,30 @@ export default function ExplainabilityDrawer({
 
                   {/* Evidence */}
                   {triggerEvidence.length > 0 && (
-                    <div className="bg-[#1A1F35] px-4 py-3 space-y-2">
-                      <div className="text-[10px] text-[#8899B2] uppercase tracking-wider font-medium">
-                        Evidence Basis
-                      </div>
-                      {triggerEvidence.map((ev) => (
-                        <div key={ev.id} className="flex items-start gap-2.5">
-                          <span className="flex-shrink-0 text-[10px] font-mono text-[#C4B5FD] bg-[#14122A] px-1.5 py-0.5 rounded border border-[#7B6FD4]/25 mt-0.5">
-                            {ev.id}
-                          </span>
-                          <p className="text-[#A8B4C8] text-xs leading-relaxed">{ev.text}</p>
+                    <div className="bg-[#1A1F35] px-4 py-3">
+                      <button
+                        onClick={() => setExpandedEvidence((prev) => ({ ...prev, [triggerKey]: !prev[triggerKey] }))}
+                        className="text-[11px] text-[#C4B5FD] hover:text-[#D4C5FD] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7B6FD4] rounded"
+                        aria-expanded={isEvidenceOpen}
+                        aria-controls={`evidence-${triggerKey}`}
+                      >
+                        {isEvidenceOpen ? 'Hide evidence ▴' : 'Show evidence ▾'}
+                      </button>
+                      {isEvidenceOpen && (
+                        <div id={`evidence-${triggerKey}`} className="mt-2 space-y-2">
+                          <div className="text-[10px] text-[#8899B2] uppercase tracking-wider font-medium">
+                            Evidence Basis
+                          </div>
+                          {triggerEvidence.map((ev) => (
+                            <div key={ev.id} className="flex items-start gap-2.5">
+                              <span className="flex-shrink-0 text-[10px] font-mono text-[#C4B5FD] bg-[#14122A] px-1.5 py-0.5 rounded border border-[#7B6FD4]/25 mt-0.5">
+                                {ev.id}
+                              </span>
+                              <p className="text-[#A8B4C8] text-xs leading-relaxed">{ev.text}</p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>

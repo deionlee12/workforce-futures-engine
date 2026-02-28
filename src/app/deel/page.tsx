@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ScenarioEvent, ScenarioEvaluation, OFSWeights, ExecBrief } from '@/engine/types';
 import { evaluateScenario, applyRecommendedSequencing, computeOFSFromComponents, DEFAULT_OFS_WEIGHTS } from '@/engine/evaluateScenario';
 import ScenarioBuilder from '@/components/deel/ScenarioBuilder';
@@ -57,78 +57,118 @@ function normalizeWeights(prev: OFSWeights, changedKey: keyof OFSWeights, rawVal
   return result;
 }
 
+const AI_NARRATION_PREF_KEY = 'wfs_ai_narration_enabled';
+
 // ── Page component ────────────────────────────────────────────────────────────
 
 export default function DeelPage() {
   const [events, setEvents] = useState<ScenarioEvent[]>([]);
   const [evaluation, setEvaluation] = useState<ScenarioEvaluation | null>(null);
+  const [lastOFSChange, setLastOFSChange] = useState<{ before: number; after: number } | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [weights, setWeights] = useState<OFSWeights>(DEFAULT_OFS_WEIGHTS);
   const [activeView, setActiveView] = useState<'executive' | 'operator'>('executive');
   const [isCompare, setIsCompare] = useState(false);
-  const [evalB, setEvalB] = useState<ScenarioEvaluation | null>(null);
   const [showArchitecture, setShowArchitecture] = useState(false);
   const [showExplainability, setShowExplainability] = useState(false);
   const [explainabilityFilter, setExplainabilityFilter] = useState<string[] | undefined>(undefined);
   const [execBrief, setExecBrief] = useState<ExecBrief | null>(null);
   const [isBriefLoading, setIsBriefLoading] = useState(false);
+  const [aiNarrationEnabled, setAiNarrationEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(AI_NARRATION_PREF_KEY) === '1';
+  });
+  const aiNarrationEnabledRef = useRef(aiNarrationEnabled);
+  const [lastSequencingSnapshot, setLastSequencingSnapshot] = useState<ScenarioEvent[] | null>(null);
 
   // Live OFS recomputed from weights without re-running engine
   const liveOFS = evaluation
     ? computeOFSFromComponents(evaluation.componentScores, weights)
     : null;
 
-  // Auto-generate executive brief when evaluation changes
-  useEffect(() => {
-    if (!evaluation) { setExecBrief(null); return; }
-    setIsBriefLoading(true);
-    setExecBrief(null);
-    fetch('/api/copilot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: 'Generate executive brief for this scenario', evaluation, mode: 'brief' }),
-    })
-      .then((r) => r.json())
-      .then((data: ExecBrief) => setExecBrief(data))
-      .catch(() => {})
-      .finally(() => setIsBriefLoading(false));
-  }, [evaluation]);
-
-  // Compare mode: auto-compute evalB = optimized version of current events
-  useEffect(() => {
-    if (!evaluation || !isCompare) { setEvalB(null); return; }
+  const evalB = useMemo(() => {
+    if (!evaluation || !isCompare) return null;
     const optimizedEvents = applyRecommendedSequencing(events);
-    setEvalB(evaluateScenario(optimizedEvents, weights));
+    return evaluateScenario(optimizedEvents, weights);
   }, [evaluation, isCompare, events, weights]);
 
+  const requestExecBrief = useCallback(async (
+    nextEval: ScenarioEvaluation | null,
+    options?: { force?: boolean },
+  ) => {
+    const shouldRun = !!options?.force || aiNarrationEnabledRef.current;
+    if (!nextEval || !shouldRun) {
+      setExecBrief(null);
+      setIsBriefLoading(false);
+      return;
+    }
+    setIsBriefLoading(true);
+    setExecBrief(null);
+    try {
+      const response = await fetch('/api/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: 'Generate executive brief for this scenario',
+          evaluation: nextEval,
+          mode: 'brief',
+        }),
+      });
+      const data: ExecBrief = await response.json();
+      if (!aiNarrationEnabledRef.current && !options?.force) return;
+      setExecBrief(data);
+    } catch {
+      // ignore brief generation failures in demo mode
+    } finally {
+      setIsBriefLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    aiNarrationEnabledRef.current = aiNarrationEnabled;
+    window.localStorage.setItem(AI_NARRATION_PREF_KEY, aiNarrationEnabled ? '1' : '0');
+  }, [aiNarrationEnabled]);
+
+  useEffect(() => {
+    if (!lastOFSChange) return;
+    const timer = window.setTimeout(() => setLastOFSChange(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [lastOFSChange]);
+
   const handleAddEvent = useCallback((event: ScenarioEvent) => {
+    setLastSequencingSnapshot(null);
     setEvents((prev) => [...prev, event]);
   }, []);
 
   const handleRemoveEvent = useCallback((id: string) => {
+    setLastSequencingSnapshot(null);
     setEvents((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
   const handlePreviewImpact = useCallback(() => {
     if (events.length === 0) return;
+    setLastSequencingSnapshot(null);
     setIsRunning(true);
     setTimeout(() => {
       const result = evaluateScenario(events, weights);
       setEvaluation(result);
+      void requestExecBrief(result);
       setIsRunning(false);
     }, 600);
-  }, [events, weights]);
+  }, [events, weights, requestExecBrief]);
 
   const handleWowButton = useCallback((preset: 1 | 2 | 3) => {
     const presetEvents = getWowPreset(preset);
+    setLastSequencingSnapshot(null);
     setEvents(presetEvents);
     setIsRunning(true);
     setTimeout(() => {
       const result = evaluateScenario(presetEvents, weights);
       setEvaluation(result);
+      void requestExecBrief(result);
       setIsRunning(false);
     }, 800);
-  }, [weights]);
+  }, [weights, requestExecBrief]);
 
   const handleWeightChange = useCallback((key: keyof OFSWeights, value: number) => {
     setWeights((prev) => normalizeWeights(prev, key, value));
@@ -141,15 +181,49 @@ export default function DeelPage() {
 
   const handleApplySequencing = useCallback(() => {
     if (!evaluation) return;
+    const beforeOFS = evaluation.signals.ofs;
+    setLastSequencingSnapshot(events.map((evt) => ({ ...evt })));
+    setLastOFSChange(null);
     const optimized = applyRecommendedSequencing(events);
     setEvents(optimized);
     setIsRunning(true);
     setTimeout(() => {
       const result = evaluateScenario(optimized, weights);
       setEvaluation(result);
+      void requestExecBrief(result);
+      const afterOFS = result.signals.ofs;
+      if (Math.abs(beforeOFS - afterOFS) > 0.001) {
+        setLastOFSChange({ before: beforeOFS, after: afterOFS });
+      }
       setIsRunning(false);
     }, 600);
-  }, [events, evaluation, weights]);
+  }, [events, evaluation, weights, requestExecBrief]);
+
+  const handleRevertSequencing = useCallback(() => {
+    if (!lastSequencingSnapshot || lastSequencingSnapshot.length === 0) return;
+    const restored = lastSequencingSnapshot.map((evt) => ({ ...evt }));
+    setEvents(restored);
+    setIsRunning(true);
+    setTimeout(() => {
+      const result = evaluateScenario(restored, weights);
+      setEvaluation(result);
+      void requestExecBrief(result);
+      setLastSequencingSnapshot(null);
+      setIsRunning(false);
+    }, 600);
+  }, [lastSequencingSnapshot, weights, requestExecBrief]);
+
+  const handleSetAiNarrationEnabled = useCallback((enabled: boolean) => {
+    setAiNarrationEnabled(enabled);
+    if (!enabled) {
+      setExecBrief(null);
+      setIsBriefLoading(false);
+      return;
+    }
+    if (evaluation) {
+      void requestExecBrief(evaluation, { force: true });
+    }
+  }, [evaluation, requestExecBrief]);
 
   return (
     <div className="h-screen flex flex-col bg-[#0A0C14] overflow-hidden">
@@ -160,18 +234,23 @@ export default function DeelPage() {
             <span className="text-white text-xs font-bold leading-none">W</span>
           </div>
           <div className="min-w-0">
-            <h1 className="text-[#F1F5F9] text-sm font-semibold leading-tight truncate">
-              Workforce Decision Layer
-            </h1>
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-[#F1F5F9] text-sm font-semibold leading-tight truncate">
+                Workforce Decision Layer
+              </h1>
+              <span className="flex-shrink-0 rounded-full border border-[#7B6FD4]/40 bg-[#7B6FD4]/10 px-2 py-0.5 text-[10px] font-medium text-[#C4B5FD]">
+                Demo Preview
+              </span>
+            </div>
             <p className="text-[#8899B2] text-[10px] leading-tight hidden sm:block">
-              Preview · Deterministic evaluation · Illustrative model
+              Preview · Deterministic evaluation
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Executive / Operator toggle */}
-          <div className="hidden sm:flex items-center gap-px rounded-lg border border-[#2D3450] overflow-hidden">
+          <div className="flex items-center gap-px rounded-lg border border-[#2D3450] overflow-hidden">
             {(['executive', 'operator'] as const).map((v) => (
               <button
                 key={v}
@@ -179,7 +258,7 @@ export default function DeelPage() {
                 className={`px-3 py-1 text-[11px] font-medium transition-colors capitalize focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7B6FD4] ${
                   activeView === v
                     ? 'bg-[#7B6FD4] text-white'
-                    : 'text-[#A8B4C8] hover:text-[#EDF0F7] bg-transparent'
+                    : 'text-[#C7D2FE] hover:text-white bg-transparent'
                 }`}
               >
                 {v}
@@ -194,30 +273,55 @@ export default function DeelPage() {
               className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7B6FD4] ${
                 isCompare
                   ? 'border-[#7B6FD4] bg-[#14122A] text-[#C4B5FD]'
-                  : 'border-[#2D3450] text-[#A8B4C8] hover:text-[#EDF0F7]'
+                  : 'border-[#2D3450] text-[#C7D2FE] hover:text-[#EDF0F7]'
               }`}
             >
               A/B
             </button>
           )}
 
-          {evaluation && (
-            <div className="hidden md:flex items-center gap-1.5 text-[10px] text-[#A8B4C8] border border-[#2D3450] rounded-lg px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE9A] inline-block" />
-              Impact active
-            </div>
+          <button
+            onClick={() => handleSetAiNarrationEnabled(!aiNarrationEnabled)}
+            className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7B6FD4] ${
+              aiNarrationEnabled
+                ? 'border-[#4ADE9A]/50 bg-[#0F1A17] text-[#86EFAC]'
+                : 'border-[#2D3450] text-[#A8B4C8] hover:text-[#EDF0F7]'
+            }`}
+            aria-pressed={aiNarrationEnabled}
+          >
+            AI Narration {aiNarrationEnabled ? 'On' : 'Off'}
+          </button>
+
+          <div
+            className={`hidden md:flex items-center gap-1.5 text-[10px] border rounded-lg px-2.5 py-1 ${
+              evaluation
+                ? 'text-[#A8B4C8] border-[#2D3450]'
+                : 'text-[#7A8AA3] border-[#2D3450]/70'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full inline-block ${
+                evaluation ? 'bg-[#4ADE9A]' : 'bg-[#5A6A85]'
+              }`}
+            />
+            {evaluation ? 'Impact active' : 'Impact idle'}
+          </div>
+
+          {activeView === 'operator' && evaluation && (
+            <button
+              onClick={() => handleOpenExplainability()}
+              className="text-xs text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/40 hover:border-[#7B6FD4] rounded-lg px-3 py-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6FD4] focus-visible:ring-offset-1 focus-visible:ring-offset-[#0F1117]"
+            >
+              Explain Why →
+            </button>
           )}
 
           <button
             onClick={() => setShowArchitecture(true)}
             className="text-xs text-[#A8B4C8] hover:text-[#C4B5FD] border border-[#2D3450] hover:border-[#7B6FD4] rounded-lg px-3 py-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6FD4] focus-visible:ring-offset-1 focus-visible:ring-offset-[#0F1117]"
           >
-            Architecture
+            How this works
           </button>
-
-          <div className="text-[10px] text-[#8899B2] hidden lg:block">
-            Demo · Not legal advice
-          </div>
         </div>
       </header>
 
@@ -242,7 +346,6 @@ export default function DeelPage() {
             evalB={evalB}
             isCompare={isCompare}
             activeView={activeView}
-            onViewChange={setActiveView}
             weights={weights}
             onWeightChange={handleWeightChange}
             liveOFS={liveOFS}
@@ -250,6 +353,9 @@ export default function DeelPage() {
             onApplySequencing={handleApplySequencing}
             execBrief={execBrief}
             isBriefLoading={isBriefLoading}
+            lastOFSChange={lastOFSChange}
+            canRevertSequencing={!!lastSequencingSnapshot}
+            onRevertSequencing={handleRevertSequencing}
           />
         </div>
 
@@ -261,6 +367,8 @@ export default function DeelPage() {
             isBriefLoading={isBriefLoading}
             activeView={activeView}
             liveOFS={liveOFS}
+            aiEnabled={aiNarrationEnabled}
+            onEnableAiNarration={() => handleSetAiNarrationEnabled(true)}
           />
         </div>
       </div>

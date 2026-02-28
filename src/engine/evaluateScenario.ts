@@ -494,7 +494,7 @@ function computeExecutionClusterRisk(
   return Math.min(Math.round(clusterScore + triggerBonus), 100);
 }
 
-// ── OFS — Operational Friction Score (0–100) ──────────────────────────────────
+// ── OFS — Workforce Friction Score (WFS) (0–100) ───────────────────────────────
 
 function computeOFS(components: OFSComponentScores, weights: OFSWeights): number {
   const raw =
@@ -654,6 +654,7 @@ function collectEvidence(triggers: PolicyTrigger[]): Evidence[] {
 
 function identifyDataGaps(events: ScenarioEvent[], triggers: PolicyTrigger[]): string[] {
   const gaps: string[] = [];
+  const hasEsDeScope = events.some((e) => e.country === 'ES') && events.some((e) => e.country === 'DE');
 
   const hasRelocation = events.some((e) => e.eventType === 'relocation');
   if (hasRelocation) {
@@ -665,7 +666,11 @@ function identifyDataGaps(events: ScenarioEvent[], triggers: PolicyTrigger[]): s
 
   const hasPE = triggers.some((t) => t.family === 'PE');
   if (hasPE) {
-    gaps.push('Existing entity presence in-country not confirmed — Tax Presence Exposure model assumes no current entity. Provide entity register data for accurate assessment.');
+    gaps.push(
+      hasEsDeScope
+        ? 'Confirm legal entity status in ES and DE'
+        : 'Confirm legal entity status in markets in scope'
+    );
   }
 
   const hasEquity = triggers.some((t) => t.family === 'Equity');
@@ -680,7 +685,11 @@ function identifyDataGaps(events: ScenarioEvent[], triggers: PolicyTrigger[]): s
 
   const hasConversion = events.some((e) => e.eventType === 'contractor_conversion');
   if (hasConversion) {
-    gaps.push('Contractor engagement history not available — Employment Status Exposure screen uses pattern indicators only. Provide engagement contracts for deeper analysis.');
+    gaps.push(
+      hasEsDeScope
+        ? 'Historical contractor tenure and engagement structure'
+        : 'Historical contractor tenure and engagement structure in markets in scope'
+    );
   }
 
   return gaps;

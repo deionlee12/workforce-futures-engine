@@ -48,7 +48,6 @@
 html,
 body {
   height: 100%;
-  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
@@ -97,6 +96,46 @@ select {
 select option {
   background: #1A1F35;
   color: #EDF0F7;
+}
+
+/* ── WFS slider ─────────────────────────────────────────────────────────── */
+.wfs-slider {
+  --wfs-slider-color: #7B6FD4;
+  appearance: none;
+  background-color: transparent;
+}
+
+.wfs-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.wfs-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -3px;
+  border-radius: 9999px;
+  background: #F8FAFC;
+  border: 1px solid #C4B5FD;
+  box-shadow: 0 0 0 1px rgba(10, 12, 20, 0.75);
+}
+
+.wfs-slider::-moz-range-track {
+  height: 6px;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.wfs-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  border: 1px solid #C4B5FD;
+  background: #F8FAFC;
+  box-shadow: 0 0 0 1px rgba(10, 12, 20, 0.75);
 }
 
 /* ── Interactive transitions ───────────────────────────────────────────── */

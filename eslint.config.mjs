@@ -7,11 +7,28 @@ const eslintConfig = defineConfig([
   ...nextTs,
   // Override default ignores of eslint-config-next.
   globalIgnores([
-    // Default ignores of eslint-config-next:
+    // Build artifacts
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
+    "coverage/**",
+
+    // Next / TS generated files
     "next-env.d.ts",
+
+    // Dependency folders
+    "node_modules/**",
+
+    // AI worktrees / local tooling
+    ".claude/**",
+    ".claire/**",
+
+    // Nested occurrences (monorepo / worktrees)
+    "**/.next/**",
+    "**/node_modules/**",
+    "**/.claude/**",
+    "**/.claire/**",
   ]),
 ]);
 

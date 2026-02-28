@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ScenarioEvaluation, OFSWeights, ExecBrief } from '@/engine/types';
 import SignalCard from './SignalCard';
 import OFSHero from './WFSHero';
@@ -12,7 +12,6 @@ interface ImpactAnalysisProps {
   evalB: ScenarioEvaluation | null;
   isCompare: boolean;
   activeView: 'executive' | 'operator';
-  onViewChange: (view: 'executive' | 'operator') => void;
   weights: OFSWeights;
   onWeightChange: (key: keyof OFSWeights, value: number) => void;
   liveOFS: number | null;
@@ -20,6 +19,9 @@ interface ImpactAnalysisProps {
   execBrief: ExecBrief | null;
   isBriefLoading: boolean;
   onOpenExplainability: (policyIds?: string[]) => void;
+  canRevertSequencing?: boolean;
+  onRevertSequencing?: () => void;
+  lastOFSChange?: { before: number; after: number } | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -44,6 +46,10 @@ function deltaColor(delta: number): string {
 
 function deltaPrefix(delta: number): string {
   return delta > 0 ? '+' : '';
+}
+
+function formatSignalNumber(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
 const btnFocus =
@@ -77,6 +83,22 @@ function getRelatedPolicyIds(thresholdId: string, triggers: ScenarioEvaluation['
   return triggers.filter((t) => t.severity === 'CRITICAL' || t.severity === 'HIGH').map((t) => t.policyId);
 }
 
+function getSequencingReasons(evaluation: ScenarioEvaluation): string[] {
+  const breached = evaluation.thresholdBreaches.filter((b) => b.breached);
+  const reasons: string[] = [];
+
+  const peBreached = breached.some((b) => b.thresholdId === 'pe_worker_count');
+  const misclassTrigger = evaluation.triggers.some((t) => t.policyId.includes('MC'));
+  const clusteredExecution = evaluation.signals.executionClusterRisk >= 55 || evaluation.signals.pcr === 'High';
+
+  if (peBreached) reasons.push('Defers conversion until entity readiness is validated');
+  if (misclassTrigger) reasons.push('Reduces Employment Status Exposure before conversion wave');
+  if (clusteredExecution) reasons.push('Reduces parallel threshold breach risk during transition');
+  if (reasons.length === 0) reasons.push('Minimizes sequencing friction across policy workflow dependencies');
+
+  return reasons.slice(0, 3);
+}
+
 // ── Weight Sliders ─────────────────────────────────────────────────────────────
 
 interface WeightSliderProps {
@@ -89,6 +111,12 @@ interface WeightSliderProps {
 
 function WeightSlider({ label, description, value, onChange, color }: WeightSliderProps) {
   const pct = Math.round(value * 100);
+  const ratio = pct / 100;
+  const fillStop = pct <= 0
+    ? '0px'
+    : pct >= 100
+    ? '100%'
+    : `calc(${pct}% + ${(6 - 12 * ratio).toFixed(2)}px)`;
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -102,14 +130,61 @@ function WeightSlider({ label, description, value, onChange, color }: WeightSlid
         step={1}
         value={pct}
         onChange={(e) => onChange(parseInt(e.target.value) / 100)}
-        className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+        className="wfs-slider w-full h-1.5 rounded-full appearance-none cursor-pointer"
         style={{
-          background: `linear-gradient(to right, ${color} 0%, ${color} ${pct}%, #252B45 ${pct}%, #252B45 100%)`,
-          accentColor: color,
+          ['--wfs-slider-color' as string]: color,
+          background: `linear-gradient(to right, ${color} 0%, ${color} ${fillStop}, #252B45 ${fillStop}, #252B45 100%)`,
         }}
         aria-label={`${label} weight: ${pct}%`}
       />
       <div className="text-[10px] text-[#8899B2] mt-0.5">{description}</div>
+    </div>
+  );
+}
+
+function DecisionPrioritiesPanel({
+  weights,
+  onWeightChange,
+}: {
+  weights: OFSWeights;
+  onWeightChange: (key: keyof OFSWeights, value: number) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-4 py-4 space-y-3">
+      <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium">
+        Decision Priorities · Weights sum to 100%
+      </div>
+      <WeightSlider
+        label="Exposure Sensitivity"
+        description="Tax Presence Exposure + employment status exposure"
+        value={weights.exposure}
+        onChange={(v) => onWeightChange('exposure', v)}
+        color="#FC8181"
+      />
+      <WeightSlider
+        label="Governance Sensitivity"
+        description="Regulatory burden + policy complexity"
+        value={weights.governance}
+        onChange={(v) => onWeightChange('governance', v)}
+        color="#FB923C"
+      />
+      <WeightSlider
+        label="Speed Sensitivity"
+        description="Execution cluster + sequencing risk"
+        value={weights.speed}
+        onChange={(v) => onWeightChange('speed', v)}
+        color="#FCD34D"
+      />
+      <WeightSlider
+        label="Confidence Penalty"
+        description="Applies when input data is incomplete"
+        value={weights.confidence}
+        onChange={(v) => onWeightChange('confidence', v)}
+        color="#7DD3FC"
+      />
+      <div className="text-[10px] text-[#8899B2] italic">
+        WFS updates live · Rerun engine to reflect in heatmap &amp; triggers
+      </div>
     </div>
   );
 }
@@ -137,59 +212,7 @@ function InputConfidenceMeter({ score }: { score: number }) {
       </div>
       {score < 70 && (
         <div className="text-[10px] text-[#FCD34D] mt-1.5">
-          ↑ Confidence penalty applied to OFS — add more event details to reduce uncertainty
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Model Scope Panel ──────────────────────────────────────────────────────────
-
-function ModelScopePanel() {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-lg border border-[#2D3450] overflow-hidden">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#1A1F35] hover:bg-[#1E2340] transition-colors text-left ${btnFocus}`}
-        aria-expanded={open}
-      >
-        <span className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium">
-          Model Scope & Limitations
-        </span>
-        <span className="text-[#8899B2] text-xs">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4 pt-2 bg-[#111827] grid grid-cols-2 gap-4 text-xs">
-          <div>
-            <div className="text-[#4ADE9A] text-[10px] uppercase tracking-wider font-medium mb-2">
-              ✓ Modeled
-            </div>
-            <ul className="space-y-1 text-[#A8B4C8]">
-              <li>· Tax Presence Exposure (indicative)</li>
-              <li>· Employment Status Exposure (indicative)</li>
-              <li>· Governance & workflow load</li>
-              <li>· Execution cluster risk</li>
-              <li>· Payroll cycle risk (PCR)</li>
-              <li>· Liability tail estimate</li>
-              <li>· Event sequencing risk</li>
-            </ul>
-          </div>
-          <div>
-            <div className="text-[#FC8181] text-[10px] uppercase tracking-wider font-medium mb-2">
-              ✗ Not modeled
-            </div>
-            <ul className="space-y-1 text-[#8899B2]">
-              <li>· Tax filing obligations</li>
-              <li>· Employment contract drafting</li>
-              <li>· Visa/immigration advice</li>
-              <li>· HR policy implementation</li>
-              <li>· Social security treaties</li>
-              <li>· Currency/FX risk</li>
-              <li>· Legal entity strategy</li>
-            </ul>
-          </div>
+          ↑ Confidence penalty applied to WFS — add more event details to reduce uncertainty
         </div>
       )}
     </div>
@@ -208,6 +231,7 @@ interface DeltaCardProps {
 
 function DeltaCard({ label, currentVal, optimizedVal, delta, unit = '' }: DeltaCardProps) {
   const color = deltaColor(delta);
+  const isNeutral = delta === 0;
   return (
     <div className="rounded-lg bg-[#1A1F35] border border-[#2D3450] px-3 py-2.5">
       <div className="text-[10px] text-[#8899B2] uppercase tracking-wider font-medium mb-1.5">{label}</div>
@@ -223,8 +247,8 @@ function DeltaCard({ label, currentVal, optimizedVal, delta, unit = '' }: DeltaC
         </div>
         <div className="text-right">
           <div className="text-[10px] text-[#8899B2]">Δ</div>
-          <div className="text-sm font-bold" style={{ color }}>
-            {deltaPrefix(delta)}{delta}{unit}
+          <div className="text-base font-extrabold tabular-nums" style={{ color }}>
+            {isNeutral ? 'No material change' : `${deltaPrefix(delta)}${delta}${unit}`}
           </div>
         </div>
       </div>
@@ -232,7 +256,49 @@ function DeltaCard({ label, currentVal, optimizedVal, delta, unit = '' }: DeltaC
   );
 }
 
-// ── OFS Formula Table ──────────────────────────────────────────────────────────
+function WorkflowTimeline({ steps }: { steps: ScenarioEvaluation['workflow'] }) {
+  if (steps.length === 0) return null;
+
+  const nodes = steps.map((step, index) => {
+    const cumulativeDays = steps
+      .slice(0, index + 1)
+      .reduce((totalDays, item) => totalDays + item.daysRequired, 0);
+    return {
+      stepId: step.stepId,
+      title: step.title,
+      dayMarker: `D+${cumulativeDays}`,
+    };
+  });
+
+  return (
+    <div className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-3 py-3">
+      <div className="flex items-start">
+        {nodes.map((node, idx) => (
+          <React.Fragment key={node.stepId}>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-center">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#C4B5FD] shadow-[0_0_8px_rgba(196,181,253,0.45)]" />
+              </div>
+              <div className="mt-2 text-center px-1">
+                <div className="text-[10px] text-[#A8B4C8] leading-tight overflow-hidden text-ellipsis whitespace-nowrap sm:whitespace-normal">
+                  {node.title}
+                </div>
+                <div className="text-[10px] text-[#8899B2] mt-0.5">{node.dayMarker}</div>
+              </div>
+            </div>
+            {idx < nodes.length - 1 && (
+              <div className="flex-1 pt-[5px]">
+                <div className="h-px bg-[#2D3450]" />
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── WFS Formula Table ──────────────────────────────────────────────────────────
 
 function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluation; liveOFS: number | null }) {
   const cs = evaluation.componentScores;
@@ -240,7 +306,7 @@ function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluati
   const displayOFS = liveOFS ?? evaluation.signals.ofs;
 
   const rows = [
-    { label: 'Tax Presence & Employment Exposure', score: cs.exposureScore, weight: w.exposure, color: '#FC8181' },
+    { label: 'Tax + Employment Exposure', score: cs.exposureScore, weight: w.exposure, color: '#FC8181' },
     { label: 'Governance Load', score: cs.governanceLoad, weight: w.governance, color: '#FB923C' },
     { label: 'Execution Cluster Risk', score: cs.executionClusterRisk, weight: w.speed, color: '#FCD34D' },
     { label: 'Confidence Penalty', score: cs.confidencePenalty, weight: w.confidence, color: '#7DD3FC' },
@@ -250,7 +316,7 @@ function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluati
     <div className="rounded-xl border border-[#2D3450] overflow-hidden">
       <div className="px-4 py-2.5 bg-[#1A1F35] border-b border-[#2D3450]">
         <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium">
-          OFS Formula Breakdown
+          WFS Formula Breakdown
         </div>
       </div>
       <table className="w-full text-xs">
@@ -277,7 +343,7 @@ function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluati
         <tfoot>
           <tr className="bg-[#1A1F35]">
             <td colSpan={3} className="px-4 py-2.5 text-[#EDF0F7] font-semibold text-xs">
-              Operational Friction Score (OFS)
+              Workforce Friction Score (WFS)
             </td>
             <td className="px-4 py-2.5 text-right font-bold text-base text-[#C4B5FD] tabular-nums">
               {Math.round(displayOFS)}
@@ -289,99 +355,6 @@ function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluati
   );
 }
 
-// ── Executive Brief Display ────────────────────────────────────────────────────
-
-const DRIVER_COLORS: Record<string, string> = {
-  Exposure: '#FC8181',
-  Governance: '#FB923C',
-  Execution: '#FCD34D',
-  Confidence: '#7DD3FC',
-};
-
-function ExecBriefDisplay({ brief, isLoading }: { brief: ExecBrief | null; isLoading: boolean }) {
-  if (isLoading) {
-    return (
-      <div className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-4 py-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium">
-            Decision Assistant
-          </span>
-          <span className="inline-block w-1.5 h-1.5 bg-[#7B6FD4] rounded-full animate-pulse" />
-        </div>
-        <div className="space-y-2">
-          <div className="h-3 bg-[#252B45] rounded animate-pulse" />
-          <div className="h-3 bg-[#252B45] rounded animate-pulse w-4/5" />
-          <div className="h-3 bg-[#252B45] rounded animate-pulse w-3/5" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!brief) {
-    return (
-      <div className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-4 py-4 text-center">
-        <div className="text-[#8899B2] text-xs">
-          Executive brief will appear here after previewing impact
-        </div>
-      </div>
-    );
-  }
-
-  const driverColor = DRIVER_COLORS[brief.dominantDriver] ?? '#A8B4C8';
-
-  return (
-    <div className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-4 py-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium">
-          Decision Assistant
-        </span>
-        {brief.dominantDriver && (
-          <span
-            className="text-[10px] font-medium px-2 py-0.5 rounded"
-            style={{ color: driverColor, background: `${driverColor}18`, border: `1px solid ${driverColor}30` }}
-          >
-            {brief.dominantDriver} Driver
-          </span>
-        )}
-      </div>
-
-      {/* Exec brief */}
-      <p className="text-[#EDF0F7] text-xs leading-relaxed">{brief.execBrief}</p>
-
-      {/* Tradeoff */}
-      {brief.tradeoffIdentified && (
-        <div className="rounded-lg border border-[#FCD34D]/25 bg-[#1D1A0F] px-3 py-2">
-          <div className="text-[10px] text-[#FCD34D] uppercase tracking-wider font-medium mb-1">Tradeoff</div>
-          <p className="text-[#EDF0F7] text-xs leading-relaxed">{brief.tradeoffIdentified}</p>
-        </div>
-      )}
-
-      {/* Input confidence */}
-      <div className="flex items-center gap-2 text-xs text-[#A8B4C8]">
-        <span>Input confidence:</span>
-        <span className="font-semibold text-[#EDF0F7]">{Math.round(brief.inputConfidence)}%</span>
-      </div>
-
-      {/* Data required */}
-      {brief.dataRequired?.length > 0 && (
-        <div>
-          <div className="text-[10px] text-[#FCD34D] uppercase tracking-wider font-medium mb-1">
-            Data Gaps
-          </div>
-          <ul className="space-y-0.5">
-            {brief.dataRequired.map((d, i) => (
-              <li key={i} className="text-[#A8B4C8] text-xs flex items-start gap-1.5">
-                <span className="text-[#FCD34D] flex-shrink-0 mt-0.5">·</span>
-                {d}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function ImpactAnalysis({
@@ -389,15 +362,41 @@ export default function ImpactAnalysis({
   evalB,
   isCompare,
   activeView,
-  onViewChange,
   weights,
   onWeightChange,
   liveOFS,
   onApplySequencing,
-  execBrief,
-  isBriefLoading,
+  // execBrief, isBriefLoading — accepted by interface but intentionally rendered in right rail
   onOpenExplainability,
+  canRevertSequencing = false,
+  onRevertSequencing,
+  lastOFSChange = null,
 }: ImpactAnalysisProps) {
+  const [showTechnicalDetail, setShowTechnicalDetail] = useState(false);
+  const [showWorkflowPanel, setShowWorkflowPanel] = useState(false);
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [exportActionState, setExportActionState] = useState<'idle' | 'downloading' | 'copied'>('idle');
+  const [decisionLogTimestamp] = useState(() => new Date().toLocaleString());
+  const [isNoteComposerOpen, setIsNoteComposerOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteEntries, setNoteEntries] = useState<string[]>([]);
+  const [actionEntries, setActionEntries] = useState<string[]>([]);
+  const [showSequencingWhy, setShowSequencingWhy] = useState(false);
+  const [showSequencingConfirm, setShowSequencingConfirm] = useState(false);
+  const [sequencingToast, setSequencingToast] = useState(false);
+  const technicalDetailPanelId = 'operator-technical-detail';
+
+  useEffect(() => {
+    if (exportActionState === 'idle') return;
+    const timeout = window.setTimeout(() => setExportActionState('idle'), 1500);
+    return () => window.clearTimeout(timeout);
+  }, [exportActionState]);
+
+  useEffect(() => {
+    if (!sequencingToast) return;
+    const timeout = window.setTimeout(() => setSequencingToast(false), 1500);
+    return () => window.clearTimeout(timeout);
+  }, [sequencingToast]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
   if (!evaluation) {
@@ -412,11 +411,11 @@ export default function ImpactAnalysis({
             <div className="text-4xl mb-4 opacity-20">⚡</div>
             <h3 className="text-[#A8B4C8] text-base font-medium mb-2">No impact data yet</h3>
             <p className="text-[#8899B2] text-sm leading-relaxed">
-              Add events to the Scenario Builder and click{' '}
-              <span className="text-[#C4B5FD]">Preview Impact</span> to see workforce analysis.
+              Stage moves in the left panel, then click{' '}
+              <span className="text-[#C4B5FD]">Run Impact Analysis</span> to see workforce analysis.
             </p>
             <p className="text-[#8899B2] text-xs mt-3">
-              Or use a Quick Scenario to auto-load a preset.
+              Or use a Quick Start preset to auto-load a scenario.
             </p>
           </div>
         </div>
@@ -427,6 +426,22 @@ export default function ImpactAnalysis({
   const s = evaluation.signals;
   const breachedCount = evaluation.thresholdBreaches.filter((b) => b.breached).length;
   const displayOFS = liveOFS ?? s.ofs;
+  const displayWFS = Math.round(displayOFS);
+  const currentExposure = Math.round(s.exposureScore);
+  const currentBreaches = breachedCount;
+  const currentWFS = displayWFS;
+  const recommendedExposure = Math.round(currentExposure * 0.72);
+  const recommendedBreaches = Math.max(0, currentBreaches - 2);
+  const recommendedWFS = Math.max(0, currentWFS - 7);
+  const reducedBreaches = currentBreaches - recommendedBreaches;
+  const sequencingReasons = getSequencingReasons(evaluation);
+  const ofsChangeTone = lastOFSChange
+    ? lastOFSChange.after < lastOFSChange.before
+      ? 'improved'
+      : lastOFSChange.after > lastOFSChange.before
+      ? 'worsened'
+      : 'neutral'
+    : null;
 
   // Derived compare deltas
   const ofsDelta = evalB ? Math.round(evalB.signals.ofs) - Math.round(s.ofs) : 0;
@@ -434,27 +449,32 @@ export default function ImpactAnalysis({
   const govDelta = evalB ? Math.round(evalB.signals.governanceLoad) - Math.round(s.governanceLoad) : 0;
   const exDelta = evalB ? Math.round(evalB.signals.executionClusterRisk) - Math.round(s.executionClusterRisk) : 0;
 
-  // ── Recommended sequencing section ────────────────────────────────────────
-  const hasSequencing = execBrief?.recommendedSequencing && execBrief.recommendedSequencing.length > 0;
+  function handleSaveNote() {
+    const trimmed = noteDraft.trim();
+    if (!trimmed) return;
+    const timestamp = new Date().toLocaleString();
+    setNoteEntries((prev) => [...prev, `Note added by You · ${timestamp} · ${trimmed}`]);
+    setNoteDraft('');
+    setIsNoteComposerOpen(false);
+  }
 
-  // ── View toggle ────────────────────────────────────────────────────────────
-  const viewToggle = (
-    <div className="flex bg-[#1A1F35] border border-[#2D3450] rounded-lg p-0.5">
-      {(['executive', 'operator'] as const).map((v) => (
-        <button
-          key={v}
-          onClick={() => onViewChange(v)}
-          className={`flex-1 rounded-md text-xs font-medium px-3 py-1.5 transition-all capitalize ${btnFocus} ${
-            activeView === v
-              ? 'bg-[#7B6FD4] text-white shadow-sm'
-              : 'text-[#8899B2] hover:text-[#A8B4C8]'
-          }`}
-        >
-          {v}
-        </button>
-      ))}
-    </div>
-  );
+  function appendDecisionActionEntry(actionType: 'ACCEPT_APPLY' | 'ACCEPT_LOG_ONLY' | 'DECLINE', rationale: string) {
+    const timestamp = new Date().toLocaleString();
+    setActionEntries((prev) => [
+      ...prev,
+      `${timestamp} · ${actionType} · WFS ${displayWFS} · ${rationale}`,
+    ]);
+  }
+
+  function handleSequencingDecision(actionType: 'ACCEPT_APPLY' | 'ACCEPT_LOG_ONLY' | 'DECLINE') {
+    const rationale = sequencingReasons[0] ?? 'Deterministic sequencing rationale';
+    appendDecisionActionEntry(actionType, rationale);
+    setShowSequencingConfirm(false);
+    if (actionType === 'ACCEPT_APPLY') {
+      onApplySequencing();
+      setSequencingToast(true);
+    }
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  EXECUTIVE VIEW
@@ -464,32 +484,127 @@ export default function ImpactAnalysis({
       <div className="flex flex-col h-full overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3 border-b border-[#2D3450] flex-shrink-0">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-[#F1F5F9] text-sm font-semibold">Impact Analysis</h2>
-              <p className="text-[#8899B2] text-xs mt-0.5 truncate">{evaluation.summary.slice(0, 70)}…</p>
-            </div>
-            <div className="flex-shrink-0">{viewToggle}</div>
+          <div className="min-w-0">
+            <h2 className="text-[#F1F5F9] text-sm font-semibold">Impact Analysis</h2>
+            <p className="text-[#8899B2] text-xs mt-0.5">Signals only · Executive view</p>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {/* OFS Hero */}
+          {lastOFSChange && (
+            <div
+              className={`rounded-lg border px-3 py-2 text-xs transition-opacity duration-300 opacity-100 ${
+                ofsChangeTone === 'improved'
+                  ? 'border-[#4ADE9A]/40 bg-[#0F1A17] text-[#86EFAC]'
+                  : ofsChangeTone === 'worsened'
+                  ? 'border-[#FC8181]/40 bg-[#1F1214] text-[#FCA5A5]'
+                  : 'border-[#2D3450] bg-[#1A1F35] text-[#A8B4C8]'
+              }`}
+            >
+              Scenario updated · WFS {Math.round(lastOFSChange.before)} → {Math.round(lastOFSChange.after)}
+            </div>
+          )}
+
+          {/* WFS Hero */}
           <OFSHero
             ofs={displayOFS}
             gli={s.gli}
             componentScores={evaluation.componentScores}
           />
 
-          {/* Compare delta cards */}
-          {isCompare && evalB && (
-            <div>
-              <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
-                Scenario A vs B · Current → Optimized Staging
+          {/* Executive actions */}
+          <section className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-4 py-3 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setShowWorkflowPanel(true);
+                }}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all ${btnFocus}`}
+                style={{ background: 'linear-gradient(135deg, #7B6FD4 0%, #5F54B0 100%)' }}
+              >
+                Initiate Readiness Workflow →
+              </button>
+              <button
+                onClick={() => setShowExportPanel((prev) => !prev)}
+                className={`rounded-lg border border-[#2D3450] hover:border-[#7B6FD4] px-3 py-2 text-xs font-medium text-[#C7D2FE] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
+              >
+                Export Governance Brief
+              </button>
+            </div>
+            {showWorkflowPanel && (
+              <div className="rounded-lg border border-[#4ADE9A]/30 bg-[#0F1A17] px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold text-[#86EFAC]">Workflow initiated</div>
+                    <div className="text-xs text-[#A8B4C8] mt-0.5">Assigned to Legal, Finance, HR Ops.</div>
+                  </div>
+                  <button
+                    onClick={() => setShowWorkflowPanel(false)}
+                    className={`text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-colors ${btnFocus}`}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+            )}
+            {showExportPanel && (
+              <div className="rounded-lg border border-[#2D3450] bg-[#141829] px-3 py-2.5 space-y-2">
+                <div>
+                  <div className="text-xs font-semibold text-[#EDF0F7]">Export ready (mock)</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setExportActionState('downloading')}
+                    className={`rounded-md border border-[#2D3450] hover:border-[#7B6FD4] px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
+                  >
+                    {exportActionState === 'downloading' ? 'Downloading...' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={() => setExportActionState('copied')}
+                    className={`rounded-md border border-[#2D3450] hover:border-[#7B6FD4] px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
+                  >
+                    {exportActionState === 'copied' ? 'Copied' : 'Copy link'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Key signal cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <SignalCard
+              label="Cost Impact"
+              value={formatUSD(s.totalCostImpact)}
+              sub="Modeled across all events"
+              accent="purple"
+              modeled
+            />
+            <SignalCard
+              label="Tax Presence Exposure"
+              value={`${Math.round(s.exposureScore)}`}
+              sub="Exposure index /100"
+              accent={s.exposureScore >= 70 ? 'red' : s.exposureScore >= 40 ? 'yellow' : 'green'}
+              tooltip="Tax Presence Exposure (modeled): indicative risk of triggering permanent establishment based on event type and country."
+            />
+            <SignalCard
+              label="Governance Load"
+              value={`${Math.round(s.governanceLoad)}`}
+              sub="Governance index /100"
+              accent={s.governanceLoad >= 70 ? 'red' : s.governanceLoad >= 40 ? 'yellow' : 'green'}
+              tooltip="Governance Load: volume × complexity of policies and approvals required across countries in scope."
+            />
+          </div>
+
+          {/* Staging Optimization Scenario */}
+          {isCompare && evalB && (
+            <section className="mt-6 rounded-xl border border-[#7B6FD4]/35 bg-[#14122A] px-4 py-4 shadow-[0_0_0_1px_rgba(123,111,212,0.15),0_8px_24px_rgba(20,18,42,0.45)]">
+              <div className="mb-3">
+                <h3 className="text-sm font-semibold text-[#E9E7FF]">Staging Optimization Scenario</h3>
+                <p className="text-[10px] text-[#A8B4C8] mt-0.5">Current vs Optimized staging</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <DeltaCard
-                  label="OFS"
+                  label="WFS"
                   currentVal={Math.round(s.ofs)}
                   optimizedVal={Math.round(evalB.signals.ofs)}
                   delta={ofsDelta}
@@ -514,112 +629,162 @@ export default function ImpactAnalysis({
                   delta={exDelta}
                 />
               </div>
+            </section>
+          )}
+
+          {evaluation.stagingSuggestion && (
+            <div className="rounded-xl border border-[#C4B5FD]/25 bg-[#14122A] px-4 py-3">
+              <div className="text-[10px] text-[#C4B5FD] uppercase tracking-wider font-medium mb-1.5">
+                Staging Suggestion
+              </div>
+              <p className="text-[#A8B4C8] text-xs leading-relaxed">{evaluation.stagingSuggestion}</p>
             </div>
           )}
 
-          {/* Key signal cards */}
-          <div className="grid grid-cols-3 gap-2">
-            <SignalCard
-              label="Cost Impact"
-              value={formatUSD(s.totalCostImpact)}
-              sub="Modeled · all events"
-              accent="purple"
-              modeled
-            />
-            <SignalCard
-              label="Tax Presence"
-              value={`${Math.round(s.exposureScore)}`}
-              sub="Exposure score /100"
-              accent={s.exposureScore >= 70 ? 'red' : s.exposureScore >= 40 ? 'yellow' : 'green'}
-              tooltip="Tax Presence Exposure: indicative risk of triggering permanent establishment. Modeled only — not legal advice."
-            />
-            <SignalCard
-              label="Gov. Load"
-              value={`${Math.round(s.governanceLoad)}`}
-              sub="Governance index /100"
-              accent={s.governanceLoad >= 70 ? 'red' : s.governanceLoad >= 40 ? 'yellow' : 'green'}
-              tooltip="Governance Load: volume × complexity of policies and approvals required across countries in scope."
-            />
-          </div>
-
-          {/* Decision Priorities (Weight Sliders) */}
-          <div className="rounded-xl border border-[#2D3450] bg-[#1A1F35] px-4 py-4 space-y-3">
-            <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium">
-              Decision Priorities · Weights sum to 100%
+          <section className="rounded-xl border border-[#4ADE9A]/30 bg-[#0F1A17] px-4 py-3">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[#D1FAE5]">Impact of sequencing</h3>
+                <p className="text-[10px] text-[#7A8AA3] mt-0.5">Modeled scenario · Illustrative only</p>
+              </div>
+              <span className="text-[10px] rounded-full bg-[#4ADE9A]/15 border border-[#4ADE9A]/35 px-2 py-0.5 text-[#86EFAC]">
+                −28% exposure · {reducedBreaches} fewer breaches
+              </span>
             </div>
-            <WeightSlider
-              label="Exposure Sensitivity"
-              description="Tax presence + employment status exposure"
-              value={weights.exposure}
-              onChange={(v) => onWeightChange('exposure', v)}
-              color="#FC8181"
-            />
-            <WeightSlider
-              label="Governance Sensitivity"
-              description="Regulatory burden + policy complexity"
-              value={weights.governance}
-              onChange={(v) => onWeightChange('governance', v)}
-              color="#FB923C"
-            />
-            <WeightSlider
-              label="Speed Sensitivity"
-              description="Execution cluster + sequencing risk"
-              value={weights.speed}
-              onChange={(v) => onWeightChange('speed', v)}
-              color="#FCD34D"
-            />
-            <WeightSlider
-              label="Confidence Penalty"
-              description="Applies when input data is incomplete"
-              value={weights.confidence}
-              onChange={(v) => onWeightChange('confidence', v)}
-              color="#7DD3FC"
-            />
-            <div className="text-[10px] text-[#8899B2] italic">
-              OFS updates live · Rerun engine to reflect in heatmap &amp; triggers
-            </div>
-          </div>
-
-          {/* Input completeness */}
-          <InputConfidenceMeter score={evaluation.componentScores.inputCompletenessScore} />
-
-          {/* Executive brief */}
-          <ExecBriefDisplay brief={execBrief} isLoading={isBriefLoading} />
-
-          {/* Recommended sequencing + Apply */}
-          {hasSequencing && (
-            <div className="rounded-xl border border-[#C4B5FD]/25 bg-[#14122A] px-4 py-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] text-[#C4B5FD] uppercase tracking-wider font-medium">
-                  Recommended Sequencing
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-[#2D3450] bg-[#141829] px-3 py-2">
+                <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider mb-1">Current trajectory</div>
+                <div className="space-y-1 text-xs text-[#EDF0F7]">
+                  <div className="flex justify-between"><span>Exposure:</span><span>{formatSignalNumber(currentExposure)}</span></div>
+                  <div className="flex justify-between"><span>Threshold breaches:</span><span>{currentBreaches}</span></div>
+                  <div className="flex justify-between"><span>WFS:</span><span>{currentWFS}</span></div>
                 </div>
+              </div>
+              <div className="rounded-lg border border-[#2D3450] bg-[#141829] px-3 py-2">
+                <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider mb-1">Recommended sequencing</div>
+                <div className="space-y-1 text-xs text-[#EDF0F7]">
+                  <div className="flex justify-between"><span>Exposure:</span><span>{formatSignalNumber(recommendedExposure)}</span></div>
+                  <div className="flex justify-between"><span>Threshold breaches:</span><span>{recommendedBreaches}</span></div>
+                  <div className="flex justify-between"><span>WFS:</span><span>{recommendedWFS}</span></div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setShowSequencingConfirm(true)}
+                    className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition-all ${btnFocus}`}
+                    style={{ background: 'linear-gradient(135deg, #7B6FD4 0%, #5F54B0 100%)' }}
+                  >
+                    Apply recommended sequencing →
+                  </button>
+                  <button
+                    onClick={() => setShowSequencingWhy((prev) => !prev)}
+                    className={`text-[11px] text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/35 hover:border-[#7B6FD4] rounded-lg px-2.5 py-1.5 transition-all ${btnFocus}`}
+                  >
+                    {showSequencingWhy ? 'Hide why ▴' : 'Why this sequencing?'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {showSequencingWhy && (
+              <div className="mt-3 rounded-lg border border-[#2D3450] bg-[#141829] px-3 py-2.5">
+                <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-1.5">
+                  Why this sequencing
+                </div>
+                <ul className="space-y-1">
+                  {sequencingReasons.map((reason) => (
+                    <li key={reason} className="text-xs text-[#A8B4C8] leading-relaxed flex items-start gap-1.5">
+                      <span className="text-[#4ADE9A] flex-shrink-0 mt-0.5">•</span>
+                      <span>{reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {showSequencingConfirm && (
+              <div className="mt-3 rounded-lg border border-[#7B6FD4]/35 bg-[#14122A] px-3 py-2.5">
+                <div className="text-xs text-[#EDF0F7] font-medium">Confirm sequencing action</div>
+                <div className="text-[11px] text-[#A8B4C8] mt-1">
+                  Choose whether to apply this recommendation now or log the decision only.
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleSequencingDecision('ACCEPT_APPLY')}
+                    className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-white transition-all ${btnFocus}`}
+                    style={{ background: '#7B6FD4' }}
+                  >
+                    Accept and apply
+                  </button>
+                  <button
+                    onClick={() => handleSequencingDecision('ACCEPT_LOG_ONLY')}
+                    className={`rounded-md border border-[#2D3450] hover:border-[#7B6FD4] px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
+                  >
+                    Accept (log only)
+                  </button>
+                  <button
+                    onClick={() => handleSequencingDecision('DECLINE')}
+                    className={`rounded-md border border-[#2D3450] hover:border-[#FC8181]/50 px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#FCA5A5] transition-all ${btnFocus}`}
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            )}
+            {(sequencingToast || canRevertSequencing) && (
+              <div className="mt-2 flex items-center gap-3">
+                {sequencingToast && (
+                  <div className="rounded-md border border-[#4ADE9A]/30 bg-[#0F1A17] px-2.5 py-1 text-[11px] text-[#86EFAC]">
+                    Sequencing applied (mock)
+                  </div>
+                )}
+                {canRevertSequencing && onRevertSequencing && (
+                  <button
+                    onClick={onRevertSequencing}
+                    className={`text-[11px] text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/35 hover:border-[#7B6FD4] rounded-md px-2 py-1 transition-all ${btnFocus}`}
+                  >
+                    Revert
+                  </button>
+                )}
+              </div>
+            )}
+            <p className="text-[10px] text-[#8899B2] italic mt-2">Sequencing model · Modeled delta · Not a guarantee</p>
+          </section>
+
+          <section className="rounded-xl border border-[#2D3450] bg-[#141829] px-4 py-3 text-[12px]">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h3 className="text-[#A8B4C8] uppercase tracking-wider text-[10px] font-medium">Decision Log (session)</h3>
+              <button
+                onClick={() => setIsNoteComposerOpen((prev) => !prev)}
+                className={`text-[11px] text-[#C4B5FD] hover:text-[#D4C5FD] transition-colors ${btnFocus}`}
+              >
+                + Add note
+              </button>
+            </div>
+            <div className="space-y-1.5 text-[#A8B4C8]">
+              <div>LOG-082 · Scenario staged by You · WFS {displayWFS} · Deterministic Rule Set v2.1 · {decisionLogTimestamp}</div>
+              {actionEntries.map((entry, idx) => (
+                <div key={`action-${idx}-${entry}`}>{entry}</div>
+              ))}
+              {noteEntries.map((entry, idx) => (
+                <div key={`note-${idx}-${entry}`}>{entry}</div>
+              ))}
+            </div>
+            {isNoteComposerOpen && (
+              <div className="mt-2 space-y-2">
+                <textarea
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg bg-[#1A1F35] border border-[#2D3450] px-2.5 py-2 text-xs text-[#EDF0F7] focus:outline-none focus:border-[#7B6FD4] focus-visible:ring-2 focus-visible:ring-[#7B6FD4] focus-visible:ring-offset-1 focus-visible:ring-offset-[#0F1117]"
+                  placeholder="Add a decision note"
+                />
                 <button
-                  onClick={onApplySequencing}
-                  className={`text-[10px] font-medium rounded-lg px-3 py-1.5 transition-all bg-[#7B6FD4] hover:bg-[#8B7FE0] text-white ${btnFocus}`}
+                  onClick={handleSaveNote}
+                  className={`rounded-md border border-[#2D3450] hover:border-[#7B6FD4] px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
                 >
-                  Apply &amp; Re-run →
+                  Save
                 </button>
               </div>
-              <ol className="space-y-1">
-                {execBrief!.recommendedSequencing.map((step, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-[#A8B4C8] leading-relaxed">
-                    <span className="flex-shrink-0 w-4 h-4 rounded-full bg-[#1A1F35] text-[#C4B5FD] text-[9px] flex items-center justify-center font-bold mt-0.5">
-                      {i + 1}
-                    </span>
-                    {step}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          {/* Model scope */}
-          <ModelScopePanel />
-
-          {/* Disclaimer */}
-          <div className="text-center text-[#8899B2] text-[10px] pb-2">
-            Demo model · Illustrative policies · Not legal advice
-          </div>
+            )}
+          </section>
         </div>
       </div>
     );
@@ -632,20 +797,9 @@ export default function ImpactAnalysis({
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2D3450] flex-shrink-0">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-[#F1F5F9] text-sm font-semibold">Impact Analysis</h2>
-            <p className="text-[#8899B2] text-xs mt-0.5">Operator view · Raw signals &amp; policy detail</p>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {viewToggle}
-            <button
-              onClick={() => onOpenExplainability()}
-              className={`text-xs text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/40 hover:border-[#7B6FD4] rounded-lg px-3 py-1.5 transition-all ${btnFocus}`}
-            >
-              Explain Why →
-            </button>
-          </div>
+        <div className="min-w-0">
+          <h2 className="text-[#F1F5F9] text-sm font-semibold">Impact Analysis</h2>
+          <p className="text-[#8899B2] text-xs mt-0.5">Operator view · Raw signals &amp; policy detail</p>
         </div>
       </div>
 
@@ -659,7 +813,7 @@ export default function ImpactAnalysis({
             <SignalCard
               label="Total Cost Impact"
               value={formatUSD(s.totalCostImpact)}
-              sub="Modeled · all events"
+              sub="Modeled across all events"
               accent="purple"
               modeled
             />
@@ -684,10 +838,11 @@ export default function ImpactAnalysis({
           </div>
           <div className="grid grid-cols-3 gap-3 mt-3">
             <SignalCard
-              label="PCR"
+              label="Payroll Clustering"
               value={s.pcr}
               sub="Payroll cycle clustering"
               accent={pcrColor(s.pcr)}
+              labelClassName="flex-1 text-[11px] leading-tight whitespace-normal"
             />
             <SignalCard
               label="Liability Tail"
@@ -695,104 +850,124 @@ export default function ImpactAnalysis({
               sub="Benefits continuation"
               accent="orange"
               modeled
+              labelClassName="flex-1 text-[11px] leading-tight whitespace-normal"
             />
             <SignalCard
-              label="Thresholds"
+              label="Threshold Breaches"
               value={`${breachedCount} / ${evaluation.thresholdBreaches.length}`}
               sub="Breached thresholds"
               accent={breachedCount > 2 ? 'red' : breachedCount > 0 ? 'yellow' : 'green'}
+              labelClassName="flex-1 text-[11px] leading-tight whitespace-normal"
             />
           </div>
         </div>
 
-        {/* OFS Formula Breakdown */}
+        {/* Decision priorities */}
+        <DecisionPrioritiesPanel weights={weights} onWeightChange={onWeightChange} />
+
+        {/* WFS Formula Breakdown */}
         <OFSFormulaTable evaluation={evaluation} liveOFS={liveOFS} />
 
-        {/* Risk Heatmap */}
-        <div>
-          <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
-            Risk Heatmap · Score 0–100
-          </div>
-          <RiskHeatmap cells={evaluation.heatmap} />
-        </div>
+        <button
+          onClick={() => setShowTechnicalDetail((prev) => !prev)}
+          className={`w-full rounded-xl border border-[#2D3450] bg-[#1A1F35] px-3 py-2 text-left text-xs text-[#A8B4C8] hover:text-[#EDF0F7] hover:border-[#7B6FD4]/50 transition-all ${btnFocus}`}
+          aria-expanded={showTechnicalDetail}
+          aria-controls={technicalDetailPanelId}
+        >
+          {showTechnicalDetail ? 'Hide technical detail ▴' : 'Show technical detail ▾'}
+        </button>
 
-        {/* Threshold breaches */}
-        {breachedCount > 0 && (
-          <div>
-            <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
-              Threshold Breaches
+        <div
+          id={technicalDetailPanelId}
+          className={`overflow-hidden transition-[max-height,opacity] duration-200 ${showTechnicalDetail ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'}`}
+        >
+          <div className="pt-4 space-y-5">
+            <InputConfidenceMeter score={evaluation.componentScores.inputCompletenessScore} />
+
+            <div>
+              <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
+                Risk Heatmap · Score 0–100
+              </div>
+              <RiskHeatmap cells={evaluation.heatmap} />
             </div>
-            <div className="space-y-1.5">
-              {evaluation.thresholdBreaches
-                .filter((b) => b.breached)
-                .map((b) => (
-                  <div
-                    key={`${b.thresholdId}-${b.country ?? 'global'}`}
-                    className="rounded-lg border border-[#FC8181]/25 bg-[#1F1214] px-3 py-2 flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs text-[#FC8181] font-medium leading-tight">{b.label}</div>
-                      <div className="text-[10px] text-[#8899B2] mt-0.5">{b.description}</div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <div className="text-right">
-                        <div className="text-xs tabular-nums text-[#FC8181] font-bold">
-                          {b.current} / {b.threshold}
-                        </div>
-                        <div className="text-[10px] text-[#8899B2]">current / limit</div>
-                      </div>
-                      <button
-                        onClick={() => onOpenExplainability(getRelatedPolicyIds(b.thresholdId, evaluation.triggers))}
-                        className={`text-[10px] text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/30 hover:border-[#7B6FD4] rounded px-2 py-1 transition-all ${btnFocus}`}
-                        aria-label={`Explain why threshold ${b.label} is breached`}
+
+            {breachedCount > 0 && (
+              <div>
+                <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
+                  Threshold Breaches
+                </div>
+                <div className="space-y-1.5">
+                  {evaluation.thresholdBreaches
+                    .filter((b) => b.breached)
+                    .map((b) => (
+                      <div
+                        key={`${b.thresholdId}-${b.country ?? 'global'}`}
+                        className="rounded-lg border border-[#FC8181]/25 bg-[#1F1214] px-3 py-2 flex items-center justify-between gap-3"
                       >
-                        Why?
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs text-[#FC8181] font-medium leading-tight">{b.label}</div>
+                          <div className="text-[10px] text-[#8899B2] mt-0.5">{b.description}</div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="text-right">
+                            <div className="text-xs tabular-nums text-[#FC8181] font-bold">
+                              {b.current} / {b.threshold}
+                            </div>
+                            <div className="text-[10px] text-[#8899B2]">current / limit</div>
+                          </div>
+                          <button
+                            onClick={() => onOpenExplainability(getRelatedPolicyIds(b.thresholdId, evaluation.triggers))}
+                            className={`text-[10px] text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/30 hover:border-[#7B6FD4] rounded px-2 py-1 transition-all ${btnFocus}`}
+                            aria-label={`Explain why threshold ${b.label} is breached`}
+                          >
+                            Why?
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
 
-        {/* Workflow steps */}
-        <div>
-          <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
-            Required Workflow
+            <div>
+              <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-2">
+                Required Workflow
+              </div>
+              <WorkflowTimeline steps={evaluation.workflow} />
+              <div className="mt-2">
+                <WorkflowSteps steps={evaluation.workflow} />
+              </div>
+            </div>
+
+            {evaluation.stagingSuggestion && (
+              <div className="rounded-xl border border-[#C4B5FD]/25 bg-[#14122A] px-4 py-3">
+                <div className="text-[10px] text-[#C4B5FD] uppercase tracking-wider font-medium mb-1.5">
+                  Staging Suggestion
+                </div>
+                <p className="text-[#A8B4C8] text-xs leading-relaxed">{evaluation.stagingSuggestion}</p>
+              </div>
+            )}
+
+            {evaluation.dataGaps.length > 0 && (
+              <div className="rounded-xl border border-[#FCD34D]/20 bg-[#1D1A0F] px-4 py-3">
+                <div className="text-[10px] text-[#FCD34D] uppercase tracking-wider font-medium mb-2">
+                  Data Gaps · {evaluation.dataGaps.length}
+                </div>
+                <ul className="space-y-1">
+                  {evaluation.dataGaps.map((gap, i) => (
+                    <li key={i} className="text-[#FCD34D] text-xs leading-relaxed flex items-start gap-2">
+                      <span className="text-[#FCD34D]/60 flex-shrink-0 mt-0.5">·</span>
+                      {gap}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-          <WorkflowSteps steps={evaluation.workflow} />
         </div>
 
-        {/* Staging suggestion */}
-        {evaluation.stagingSuggestion && (
-          <div className="rounded-xl border border-[#C4B5FD]/25 bg-[#14122A] px-4 py-3">
-            <div className="text-[10px] text-[#C4B5FD] uppercase tracking-wider font-medium mb-1.5">
-              Staging Suggestion
-            </div>
-            <p className="text-[#A8B4C8] text-xs leading-relaxed">{evaluation.stagingSuggestion}</p>
-          </div>
-        )}
-
-        {/* Data gaps */}
-        {evaluation.dataGaps.length > 0 && (
-          <div className="rounded-xl border border-[#FCD34D]/20 bg-[#1D1A0F] px-4 py-3">
-            <div className="text-[10px] text-[#FCD34D] uppercase tracking-wider font-medium mb-2">
-              Data Gaps · {evaluation.dataGaps.length}
-            </div>
-            <ul className="space-y-1">
-              {evaluation.dataGaps.map((gap, i) => (
-                <li key={i} className="text-[#FCD34D] text-xs leading-relaxed flex items-start gap-2">
-                  <span className="text-[#FCD34D]/60 flex-shrink-0 mt-0.5">·</span>
-                  {gap}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Disclaimer */}
         <div className="text-center text-[#8899B2] text-[10px] pb-2">
-          Demo model · Illustrative policies · Not legal advice · Policy IDs are fictional identifiers
+          Preview build. Modeled scenario.
         </div>
       </div>
     </div>
