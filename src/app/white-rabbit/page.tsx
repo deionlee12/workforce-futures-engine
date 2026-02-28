@@ -2,10 +2,10 @@ import Image from "next/image";
 import styles from "./white-rabbit.module.css";
 
 const HOTSPOT = {
-  left: "35%",
-  top: "18%",
+  left: "45%",
+  top: "40%",
   width: "28%",
-  height: "40%",
+  height: "44%",
 } as const;
 
 type WhiteRabbitPageProps = {
@@ -22,18 +22,13 @@ export default async function WhiteRabbitPage({ searchParams }: WhiteRabbitPageP
       {/* Full screen image */}
       <div className={styles.mediaLayer}>
         <Image
-          src="/demo.matrix.white.rabbit.png"
+          src="/demo.matrix.white.rabbit.v3.png"
           alt="Matrix white rabbit"
           fill
           priority
           style={{ objectFit: "contain" }}
         />
       </div>
-
-      <div className={`${styles.overlay} ${styles.scanlines}`} aria-hidden="true" />
-      <div className={`${styles.overlay} ${styles.grain}`} aria-hidden="true" />
-      <div className={`${styles.overlay} ${styles.vignette}`} aria-hidden="true" />
-      <div className={`${styles.overlay} ${styles.rabbitGlow}`} aria-hidden="true" />
 
       {/* Hotspot: rabbit + white area (tune these % values) */}
       <a
@@ -65,9 +60,17 @@ export default async function WhiteRabbitPage({ searchParams }: WhiteRabbitPageP
         </div>
       )}
 
-      {/* Optional: subtle hint for first-time users */}
-      <div className={styles.hint}>
-        <span className={styles.hintText}>Click the white rabbit.</span>
+      <div
+        className={styles.terminalHint}
+        aria-hidden="true"
+        style={{
+          left: "41.5%",
+          top: "69.5%",
+          transform: "rotate(-7deg)",
+        }}
+      >
+        <span className={styles.terminalHintText}> </span>
+        <span className={styles.terminalCursor} />
       </div>
     </main>
   );
