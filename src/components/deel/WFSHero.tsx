@@ -12,7 +12,7 @@ interface OFSHeroProps {
 
 function getOFSLabel(score: number): { label: string; color: string; bg: string } {
   if (score >= 75) return { label: 'Critical Friction', color: '#FC8181', bg: '#1F1214' };
-  if (score >= 55) return { label: 'Elevated Operational Risk', color: '#FB923C', bg: '#1E160F' };
+  if (score >= 55) return { label: 'Elevated Workforce Risk', color: '#FB923C', bg: '#1E160F' };
   if (score >= 35) return { label: 'Moderate Friction', color: '#FCD34D', bg: '#1D1A0F' };
   return { label: 'Low Friction', color: '#4ADE9A', bg: '#0F1A17' };
 }
@@ -120,7 +120,7 @@ export default function OFSHero({ ofs, gli, componentScores }: OFSHeroProps) {
           <div className="flex items-center gap-1.5 text-xs text-[#A8B4C8] uppercase tracking-wider font-medium">
             Workforce Friction Score (WFS)
             <Tooltip
-              content="Weighted composite 0–100: Tax Presence Exposure · Employment Status Exposure · Governance Load · Execution Cluster Risk. Higher = more workforce friction."
+              content="Workforce Friction Score (WFS) is a 0–100 composite of exposure, governance load, execution clustering, and input confidence."
               position="above"
             >
               <button

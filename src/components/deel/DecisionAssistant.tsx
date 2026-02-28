@@ -489,13 +489,7 @@ export default function DecisionAssistant({
         <p className="text-[#8899B2] text-xs mt-0.5">
           {!aiEnabled
             ? 'AI narration off · Deterministic signals only'
-            : activeView === 'executive'
-            ? evaluation
-              ? 'Executive brief · Impact active'
-              : 'Preview impact to generate brief'
-            : evaluation
-            ? 'Q&A mode · Ask anything about this scenario'
-            : 'Preview impact to enable Q&A'}
+            : 'AI narrates evaluation output only · No new facts introduced'}
         </p>
       </div>
 

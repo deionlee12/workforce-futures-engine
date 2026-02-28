@@ -1,4 +1,5 @@
 import Image from "next/image";
+import styles from "./white-rabbit.module.css";
 
 const HOTSPOT = {
   left: "35%",
@@ -17,18 +18,9 @@ export default async function WhiteRabbitPage({ searchParams }: WhiteRabbitPageP
   const debug = Array.isArray(debugValue) ? debugValue.includes("1") : debugValue === "1";
 
   return (
-    <main
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "#000",
-        overflow: "hidden",
-        margin: 0,
-        padding: 0,
-      }}
-    >
+    <main className={styles.root}>
       {/* Full screen image */}
-      <div style={{ position: "absolute", inset: 0 }}>
+      <div className={styles.mediaLayer}>
         <Image
           src="/demo.matrix.white.rabbit.png"
           alt="Matrix white rabbit"
@@ -38,37 +30,30 @@ export default async function WhiteRabbitPage({ searchParams }: WhiteRabbitPageP
         />
       </div>
 
+      <div className={`${styles.overlay} ${styles.scanlines}`} aria-hidden="true" />
+      <div className={`${styles.overlay} ${styles.grain}`} aria-hidden="true" />
+      <div className={`${styles.overlay} ${styles.vignette}`} aria-hidden="true" />
+      <div className={`${styles.overlay} ${styles.rabbitGlow}`} aria-hidden="true" />
+
       {/* Hotspot: rabbit + white area (tune these % values) */}
       <a
         href="/deel"
         aria-label="Enter demo"
+        className={styles.hotspot}
         style={{
-          position: "absolute",
           left: HOTSPOT.left,
           top: HOTSPOT.top,
           width: HOTSPOT.width,
           height: HOTSPOT.height,
-          cursor: "pointer",
-          borderRadius: "18px",
           border: debug ? "1px dashed rgba(255,255,255,0.85)" : "none",
           background: debug ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0)",
-          transition: "background 120ms ease, border-color 120ms ease",
         }}
       />
 
       {debug && (
         <div
+          className={styles.debugPanel}
           style={{
-            position: "absolute",
-            right: 12,
-            top: 12,
-            padding: "8px 10px",
-            borderRadius: 10,
-            fontSize: 11,
-            lineHeight: 1.35,
-            color: "rgba(255,255,255,0.88)",
-            background: "rgba(0,0,0,0.55)",
-            border: "1px solid rgba(255,255,255,0.18)",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
           }}
         >
@@ -81,22 +66,8 @@ export default async function WhiteRabbitPage({ searchParams }: WhiteRabbitPageP
       )}
 
       {/* Optional: subtle hint for first-time users */}
-      <div
-        style={{
-          position: "absolute",
-          left: 18,
-          bottom: 18,
-          padding: "10px 12px",
-          borderRadius: 12,
-          fontSize: 13,
-          color: "rgba(255,255,255,0.66)",
-          background: "rgba(0,0,0,0.35)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          backdropFilter: "blur(8px)",
-          pointerEvents: "none",
-        }}
-      >
-        Click the white rabbit.
+      <div className={styles.hint}>
+        <span className={styles.hintText}>Click the white rabbit.</span>
       </div>
     </main>
   );

@@ -4,7 +4,7 @@
       "stepId": "CC-01",
       "title": "Misclassification Pre-screen",
       "owner": "Legal / Compliance",
-      "daysRequired": 5,
+      "daysRequired": 6,
       "dependencies": [],
       "systemsTouched": ["ComplianceHub", "LegalDesk"]
     },
@@ -12,7 +12,7 @@
       "stepId": "CC-02",
       "title": "Entity Threshold Review",
       "owner": "Tax / Finance",
-      "daysRequired": 3,
+      "daysRequired": 4,
       "dependencies": ["CC-01"],
       "systemsTouched": ["TaxEngine", "EntityRegister"]
     },
@@ -20,7 +20,7 @@
       "stepId": "CC-03",
       "title": "EOR Agreement Drafting",
       "owner": "HR Operations",
-      "daysRequired": 7,
+      "daysRequired": 8,
       "dependencies": ["CC-01"],
       "systemsTouched": ["ContractMgmt", "HRISCore"]
     },
@@ -28,7 +28,7 @@
       "stepId": "CC-04",
       "title": "Payroll Enrollment",
       "owner": "Payroll",
-      "daysRequired": 3,
+      "daysRequired": 2,
       "dependencies": ["CC-03"],
       "systemsTouched": ["PayrollEngine", "BenefitsAdmin"]
     },
@@ -36,7 +36,7 @@
       "stepId": "CC-05",
       "title": "Benefits Configuration",
       "owner": "Benefits Admin",
-      "daysRequired": 5,
+      "daysRequired": 3,
       "dependencies": ["CC-04"],
       "systemsTouched": ["BenefitsAdmin", "HealthProvider"]
     }

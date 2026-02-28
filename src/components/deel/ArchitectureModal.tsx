@@ -50,6 +50,9 @@ export default function ArchitectureModal({ isOpen, onClose }: ArchitectureModal
           <div>
             <h2 className="text-[#F1F5F9] text-lg font-semibold">Evaluation Pipeline</h2>
             <p className="text-[#A8B4C8] text-xs mt-0.5">Workforce Decision Layer · Decision pipeline</p>
+            <p className="text-[#A8B4C8] text-xs mt-1.5">
+              Workforce Friction Score (WFS) is a 0–100 composite of exposure, governance load, execution clustering, and input confidence.
+            </p>
             <p className="text-[#D1FAE5] text-xs mt-2">AI narrates deterministic signals. It does not invent facts.</p>
           </div>
           <button
@@ -89,8 +92,15 @@ export default function ArchitectureModal({ isOpen, onClose }: ArchitectureModal
               <span className="text-[#EDF0F7] font-medium">Narration:</span> AI-constrained to simulation output
             </div>
             <div className="text-xs text-[#A8B4C8]">
+              <span className="text-[#EDF0F7] font-medium">Evaluation Layer:</span> Edge evaluated. No LLM in risk calculation layer.
+            </div>
+            <div className="text-xs text-[#A8B4C8]">
               <span className="text-[#EDF0F7] font-medium">Policy IDs:</span> Illustrative only
             </div>
+          </div>
+
+          <div className="text-[#8899B2] text-xs italic">
+            Designed for People Ops, Legal, Finance, and Product to align on workforce moves before execution.
           </div>
         </div>
       </div>

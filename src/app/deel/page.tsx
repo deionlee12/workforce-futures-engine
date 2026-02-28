@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { ScenarioEvent, ScenarioEvaluation, OFSWeights, ExecBrief } from '@/engine/types';
-import { evaluateScenario, applyRecommendedSequencing, computeOFSFromComponents, DEFAULT_OFS_WEIGHTS } from '@/engine/evaluateScenario';
+import { evaluateScenario, applyRecommendedSequencing, DEFAULT_OFS_WEIGHTS } from '@/engine/evaluateScenario';
 import ScenarioBuilder from '@/components/deel/ScenarioBuilder';
 import ImpactAnalysis from '@/components/deel/ImpactAnalysis';
 import DecisionAssistant from '@/components/deel/DecisionAssistant';
 import ArchitectureModal from '@/components/deel/ArchitectureModal';
 import ExplainabilityDrawer from '@/components/deel/ExplainabilityDrawer';
+import { applySequencingToEvaluation, computeWFS } from '@/lib/wfs';
 
 // ── Scenario presets ──────────────────────────────────────────────────────────
 
@@ -68,7 +69,6 @@ export default function DeelPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [weights, setWeights] = useState<OFSWeights>(DEFAULT_OFS_WEIGHTS);
   const [activeView, setActiveView] = useState<'executive' | 'operator'>('executive');
-  const [isCompare, setIsCompare] = useState(false);
   const [showArchitecture, setShowArchitecture] = useState(false);
   const [showExplainability, setShowExplainability] = useState(false);
   const [explainabilityFilter, setExplainabilityFilter] = useState<string[] | undefined>(undefined);
@@ -83,14 +83,8 @@ export default function DeelPage() {
 
   // Live OFS recomputed from weights without re-running engine
   const liveOFS = evaluation
-    ? computeOFSFromComponents(evaluation.componentScores, weights)
+    ? computeWFS(evaluation.componentScores, weights)
     : null;
-
-  const evalB = useMemo(() => {
-    if (!evaluation || !isCompare) return null;
-    const optimizedEvents = applyRecommendedSequencing(events);
-    return evaluateScenario(optimizedEvents, weights);
-  }, [evaluation, isCompare, events, weights]);
 
   const requestExecBrief = useCallback(async (
     nextEval: ScenarioEvaluation | null,
@@ -181,17 +175,17 @@ export default function DeelPage() {
 
   const handleApplySequencing = useCallback(() => {
     if (!evaluation) return;
-    const beforeOFS = evaluation.signals.ofs;
+    const beforeOFS = computeWFS(evaluation.componentScores, weights);
     setLastSequencingSnapshot(events.map((evt) => ({ ...evt })));
     setLastOFSChange(null);
     const optimized = applyRecommendedSequencing(events);
     setEvents(optimized);
     setIsRunning(true);
     setTimeout(() => {
-      const result = evaluateScenario(optimized, weights);
+      const result = applySequencingToEvaluation(evaluation, weights);
       setEvaluation(result);
       void requestExecBrief(result);
-      const afterOFS = result.signals.ofs;
+      const afterOFS = computeWFS(result.componentScores, weights);
       if (Math.abs(beforeOFS - afterOFS) > 0.001) {
         setLastOFSChange({ before: beforeOFS, after: afterOFS });
       }
@@ -242,8 +236,8 @@ export default function DeelPage() {
                 Demo Preview
               </span>
             </div>
-            <p className="text-[#8899B2] text-[10px] leading-tight hidden sm:block">
-              Preview · Deterministic evaluation
+            <p className="text-[#8899B2] text-[10px] leading-tight hidden lg:block">
+              Simulate workforce decisions before committing capital, contracts, or compliance exposure.
             </p>
           </div>
         </div>
@@ -265,20 +259,6 @@ export default function DeelPage() {
               </button>
             ))}
           </div>
-
-          {/* Compare toggle */}
-          {evaluation && (
-            <button
-              onClick={() => setIsCompare((p) => !p)}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7B6FD4] ${
-                isCompare
-                  ? 'border-[#7B6FD4] bg-[#14122A] text-[#C4B5FD]'
-                  : 'border-[#2D3450] text-[#C7D2FE] hover:text-[#EDF0F7]'
-              }`}
-            >
-              A/B
-            </button>
-          )}
 
           <button
             onClick={() => handleSetAiNarrationEnabled(!aiNarrationEnabled)}
@@ -343,8 +323,6 @@ export default function DeelPage() {
         <div className="flex-1 bg-[#0F1117] flex flex-col overflow-hidden min-w-0">
           <ImpactAnalysis
             evaluation={evaluation}
-            evalB={evalB}
-            isCompare={isCompare}
             activeView={activeView}
             weights={weights}
             onWeightChange={handleWeightChange}

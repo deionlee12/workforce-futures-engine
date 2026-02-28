@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import type { ScenarioEvaluation, OFSWeights, ExecBrief } from '@/engine/types';
+import { computeWFS, deriveSequencingProjection } from '@/lib/wfs';
 import SignalCard from './SignalCard';
 import OFSHero from './WFSHero';
 import RiskHeatmap from './RiskHeatmap';
@@ -9,8 +10,6 @@ import WorkflowSteps from './WorkflowSteps';
 
 interface ImpactAnalysisProps {
   evaluation: ScenarioEvaluation | null;
-  evalB: ScenarioEvaluation | null;
-  isCompare: boolean;
   activeView: 'executive' | 'operator';
   weights: OFSWeights;
   onWeightChange: (key: keyof OFSWeights, value: number) => void;
@@ -38,18 +37,12 @@ function pcrColor(pcr: string): 'red' | 'yellow' | 'green' {
   return 'green';
 }
 
-function deltaColor(delta: number): string {
-  if (delta < 0) return '#4ADE9A';  // improvement
-  if (delta > 0) return '#FC8181';  // worsened
-  return '#A8B4C8';
-}
-
-function deltaPrefix(delta: number): string {
-  return delta > 0 ? '+' : '';
-}
-
 function formatSignalNumber(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+function formatDecisionLogId(logId: number): string {
+  return `LOG-${String(logId).padStart(3, '0')}`;
 }
 
 const btnFocus =
@@ -110,32 +103,32 @@ interface WeightSliderProps {
 }
 
 function WeightSlider({ label, description, value, onChange, color }: WeightSliderProps) {
-  const pct = Math.round(value * 100);
-  const ratio = pct / 100;
-  const fillStop = pct <= 0
-    ? '0px'
-    : pct >= 100
-    ? '100%'
-    : `calc(${pct}% + ${(6 - 12 * ratio).toFixed(2)}px)`;
+  const sliderMin = 5;
+  const sliderMax = 85;
+  const sliderValue = Math.round(value * 100);
+  const percent = ((sliderValue - sliderMin) / (sliderMax - sliderMin)) * 100;
+  const clampedPercent = Math.max(0, Math.min(100, percent));
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-[#A8B4C8]">{label}</span>
-        <span className="text-xs font-mono tabular-nums" style={{ color }}>{pct}%</span>
+        <span className="text-xs font-mono tabular-nums" style={{ color }}>{sliderValue}%</span>
       </div>
       <input
         type="range"
-        min={5}
-        max={85}
+        min={sliderMin}
+        max={sliderMax}
         step={1}
-        value={pct}
+        value={sliderValue}
         onChange={(e) => onChange(parseInt(e.target.value) / 100)}
         className="wfs-slider w-full h-1.5 rounded-full appearance-none cursor-pointer"
         style={{
-          ['--wfs-slider-color' as string]: color,
-          background: `linear-gradient(to right, ${color} 0%, ${color} ${fillStop}, #252B45 ${fillStop}, #252B45 100%)`,
+          ['--slider-fill-color' as string]: color,
+          ['--slider-track-color' as string]: '#252B45',
+          background: `linear-gradient(to right, var(--slider-fill-color) 0%, var(--slider-fill-color) ${clampedPercent}%, var(--slider-track-color) ${clampedPercent}%, var(--slider-track-color) 100%)`,
         }}
-        aria-label={`${label} weight: ${pct}%`}
+        aria-label={`${label} weight: ${sliderValue}%`}
       />
       <div className="text-[10px] text-[#8899B2] mt-0.5">{description}</div>
     </div>
@@ -219,54 +212,17 @@ function InputConfidenceMeter({ score }: { score: number }) {
   );
 }
 
-// ── Compare Delta Cards ────────────────────────────────────────────────────────
-
-interface DeltaCardProps {
-  label: string;
-  currentVal: string | number;
-  optimizedVal: string | number;
-  delta: number;
-  unit?: string;
-}
-
-function DeltaCard({ label, currentVal, optimizedVal, delta, unit = '' }: DeltaCardProps) {
-  const color = deltaColor(delta);
-  const isNeutral = delta === 0;
-  return (
-    <div className="rounded-lg bg-[#1A1F35] border border-[#2D3450] px-3 py-2.5">
-      <div className="text-[10px] text-[#8899B2] uppercase tracking-wider font-medium mb-1.5">{label}</div>
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <div className="text-[10px] text-[#8899B2]">Current</div>
-          <div className="text-sm font-semibold text-[#EDF0F7]">{currentVal}{unit}</div>
-        </div>
-        <div className="text-[#2D3450]">→</div>
-        <div>
-          <div className="text-[10px] text-[#8899B2]">Optimized</div>
-          <div className="text-sm font-semibold text-[#EDF0F7]">{optimizedVal}{unit}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-[10px] text-[#8899B2]">Δ</div>
-          <div className="text-base font-extrabold tabular-nums" style={{ color }}>
-            {isNeutral ? 'No material change' : `${deltaPrefix(delta)}${delta}${unit}`}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function WorkflowTimeline({ steps }: { steps: ScenarioEvaluation['workflow'] }) {
   if (steps.length === 0) return null;
 
   const nodes = steps.map((step, index) => {
-    const cumulativeDays = steps
-      .slice(0, index + 1)
+    const startDay = steps
+      .slice(0, index)
       .reduce((totalDays, item) => totalDays + item.daysRequired, 0);
     return {
       stepId: step.stepId,
       title: step.title,
-      dayMarker: `D+${cumulativeDays}`,
+      dayMarker: `D+${startDay}`,
     };
   });
 
@@ -300,10 +256,18 @@ function WorkflowTimeline({ steps }: { steps: ScenarioEvaluation['workflow'] }) 
 
 // ── WFS Formula Table ──────────────────────────────────────────────────────────
 
-function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluation; liveOFS: number | null }) {
+function OFSFormulaTable({
+  evaluation,
+  liveOFS,
+  weights,
+}: {
+  evaluation: ScenarioEvaluation;
+  liveOFS: number | null;
+  weights: OFSWeights;
+}) {
   const cs = evaluation.componentScores;
-  const w = evaluation.weights;
-  const displayOFS = liveOFS ?? evaluation.signals.ofs;
+  const w = weights;
+  const displayOFS = liveOFS ?? computeWFS(cs, weights);
 
   const rows = [
     { label: 'Tax + Employment Exposure', score: cs.exposureScore, weight: w.exposure, color: '#FC8181' },
@@ -359,14 +323,12 @@ function OFSFormulaTable({ evaluation, liveOFS }: { evaluation: ScenarioEvaluati
 
 export default function ImpactAnalysis({
   evaluation,
-  evalB,
-  isCompare,
   activeView,
   weights,
   onWeightChange,
   liveOFS,
   onApplySequencing,
-  // execBrief, isBriefLoading — accepted by interface but intentionally rendered in right rail
+  execBrief,
   onOpenExplainability,
   canRevertSequencing = false,
   onRevertSequencing,
@@ -384,6 +346,8 @@ export default function ImpactAnalysis({
   const [showSequencingWhy, setShowSequencingWhy] = useState(false);
   const [showSequencingConfirm, setShowSequencingConfirm] = useState(false);
   const [sequencingToast, setSequencingToast] = useState(false);
+  const [briefCopyToast, setBriefCopyToast] = useState(false);
+  const [copyBriefError, setCopyBriefError] = useState(false);
   const technicalDetailPanelId = 'operator-technical-detail';
 
   useEffect(() => {
@@ -397,6 +361,15 @@ export default function ImpactAnalysis({
     const timeout = window.setTimeout(() => setSequencingToast(false), 1500);
     return () => window.clearTimeout(timeout);
   }, [sequencingToast]);
+
+  useEffect(() => {
+    if (!briefCopyToast && !copyBriefError) return;
+    const timeout = window.setTimeout(() => {
+      setBriefCopyToast(false);
+      setCopyBriefError(false);
+    }, 2000);
+    return () => window.clearTimeout(timeout);
+  }, [briefCopyToast, copyBriefError]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
   if (!evaluation) {
@@ -424,16 +397,28 @@ export default function ImpactAnalysis({
   }
 
   const s = evaluation.signals;
+  const currentEvaluation = evaluation;
   const breachedCount = evaluation.thresholdBreaches.filter((b) => b.breached).length;
-  const displayOFS = liveOFS ?? s.ofs;
+  const displayOFS = liveOFS ?? computeWFS(evaluation.componentScores, weights);
   const displayWFS = Math.round(displayOFS);
   const currentExposure = Math.round(s.exposureScore);
   const currentBreaches = breachedCount;
   const currentWFS = displayWFS;
-  const recommendedExposure = Math.round(currentExposure * 0.72);
-  const recommendedBreaches = Math.max(0, currentBreaches - 2);
-  const recommendedWFS = Math.max(0, currentWFS - 7);
-  const reducedBreaches = currentBreaches - recommendedBreaches;
+  const sequencingApplied = canRevertSequencing;
+  const sequencingProjection = deriveSequencingProjection(evaluation, weights);
+  const recommendedExposure = sequencingProjection.exposure;
+  const recommendedBreaches = sequencingProjection.breaches;
+  const recommendedWFS = sequencingProjection.wfs;
+  const currentTrajectoryExposure = currentExposure;
+  const currentTrajectoryBreaches = currentBreaches;
+  const currentTrajectoryWFS = currentWFS;
+  const panelRecommendedExposure = sequencingApplied ? currentTrajectoryExposure : recommendedExposure;
+  const panelRecommendedBreaches = sequencingApplied ? currentTrajectoryBreaches : recommendedBreaches;
+  const panelRecommendedWFS = sequencingApplied ? currentTrajectoryWFS : recommendedWFS;
+  const reducedBreaches = Math.max(0, currentTrajectoryBreaches - panelRecommendedBreaches);
+  const exposureReductionPct = currentTrajectoryExposure > 0
+    ? Math.round((1 - (panelRecommendedExposure / currentTrajectoryExposure)) * 100)
+    : 0;
   const sequencingReasons = getSequencingReasons(evaluation);
   const ofsChangeTone = lastOFSChange
     ? lastOFSChange.after < lastOFSChange.before
@@ -442,12 +427,6 @@ export default function ImpactAnalysis({
       ? 'worsened'
       : 'neutral'
     : null;
-
-  // Derived compare deltas
-  const ofsDelta = evalB ? Math.round(evalB.signals.ofs) - Math.round(s.ofs) : 0;
-  const costDelta = evalB ? Math.round((evalB.signals.totalCostImpact - s.totalCostImpact) / 1000) : 0;
-  const govDelta = evalB ? Math.round(evalB.signals.governanceLoad) - Math.round(s.governanceLoad) : 0;
-  const exDelta = evalB ? Math.round(evalB.signals.executionClusterRisk) - Math.round(s.executionClusterRisk) : 0;
 
   function handleSaveNote() {
     const trimmed = noteDraft.trim();
@@ -458,12 +437,16 @@ export default function ImpactAnalysis({
     setIsNoteComposerOpen(false);
   }
 
-  function appendDecisionActionEntry(actionType: 'ACCEPT_APPLY' | 'ACCEPT_LOG_ONLY' | 'DECLINE', rationale: string) {
+  function appendDecisionLogEntry(message: string) {
     const timestamp = new Date().toLocaleString();
-    setActionEntries((prev) => [
-      ...prev,
-      `${timestamp} · ${actionType} · WFS ${displayWFS} · ${rationale}`,
-    ]);
+    setActionEntries((prev) => {
+      const nextLogId = 82 + prev.length + 1;
+      return [...prev, `${formatDecisionLogId(nextLogId)} · ${message} · ${timestamp}`];
+    });
+  }
+
+  function appendDecisionActionEntry(actionType: 'ACCEPT_APPLY' | 'ACCEPT_LOG_ONLY' | 'DECLINE', rationale: string) {
+    appendDecisionLogEntry(`${actionType} · WFS ${displayWFS} · ${rationale}`);
   }
 
   function handleSequencingDecision(actionType: 'ACCEPT_APPLY' | 'ACCEPT_LOG_ONLY' | 'DECLINE') {
@@ -473,6 +456,43 @@ export default function ImpactAnalysis({
     if (actionType === 'ACCEPT_APPLY') {
       onApplySequencing();
       setSequencingToast(true);
+    }
+  }
+
+  async function handleCopyExecutiveBrief() {
+    const fragments: string[] = [];
+    const scenarioSummary = execBrief?.scenarioSummary || currentEvaluation.summary;
+    if (scenarioSummary) {
+      fragments.push(`Workforce simulation: ${scenarioSummary}`);
+    }
+
+    fragments.push(`Workforce Friction Score: ${displayWFS}/100.`);
+
+    if (execBrief?.dominantDriver) {
+      const dominantDriverLabel =
+        execBrief.dominantDriver === 'Exposure' ? 'Tax Presence Exposure' : execBrief.dominantDriver;
+      fragments.push(`Dominant driver: ${dominantDriverLabel}.`);
+    }
+
+    if (currentEvaluation.stagingSuggestion) {
+      fragments.push(`Recommended action: ${currentEvaluation.stagingSuggestion}`);
+    }
+
+    if (currentExposure > 0) {
+      fragments.push(
+        `Modeled delta: ${exposureReductionPct}% exposure reduction, ${reducedBreaches} fewer threshold breaches.`,
+      );
+    }
+
+    fragments.push('Preview build · Illustrative only · Not legal advice.');
+
+    try {
+      await navigator.clipboard.writeText(fragments.join(' '));
+      setBriefCopyToast(true);
+      setCopyBriefError(false);
+    } catch {
+      setCopyBriefError(true);
+      setBriefCopyToast(false);
     }
   }
 
@@ -517,6 +537,9 @@ export default function ImpactAnalysis({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
+                  appendDecisionLogEntry(
+                    `READINESS_INITIATED · WFS ${displayWFS} · Readiness workflow initiated; governance dispatch to Legal, Finance, and HR Ops (illustrative)`,
+                  );
                   setShowWorkflowPanel(true);
                 }}
                 className={`rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all ${btnFocus}`}
@@ -530,13 +553,23 @@ export default function ImpactAnalysis({
               >
                 Export Governance Brief
               </button>
+              <button
+                onClick={() => {
+                  void handleCopyExecutiveBrief();
+                }}
+                className={`rounded-lg border border-[#2D3450] hover:border-[#7B6FD4] px-3 py-2 text-xs font-medium text-[#C7D2FE] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
+              >
+                Copy executive brief
+              </button>
             </div>
             {showWorkflowPanel && (
               <div className="rounded-lg border border-[#4ADE9A]/30 bg-[#0F1A17] px-3 py-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs font-semibold text-[#86EFAC]">Workflow initiated</div>
-                    <div className="text-xs text-[#A8B4C8] mt-0.5">Assigned to Legal, Finance, HR Ops.</div>
+                    <div className="text-xs font-semibold text-[#86EFAC]">Plan logged to Governance Vault</div>
+                    <div className="text-xs text-[#A8B4C8] mt-0.5">
+                      Workflows dispatched to Legal, Finance, and HR Ops. Stakeholders will receive a readiness brief.
+                    </div>
                   </div>
                   <button
                     onClick={() => setShowWorkflowPanel(false)}
@@ -545,6 +578,15 @@ export default function ImpactAnalysis({
                     Dismiss
                   </button>
                 </div>
+              </div>
+            )}
+            {(briefCopyToast || copyBriefError) && (
+              <div className={`rounded-lg border px-3 py-2 text-xs ${
+                copyBriefError
+                  ? 'border-[#FC8181]/40 bg-[#1F1214] text-[#FCA5A5]'
+                  : 'border-[#4ADE9A]/35 bg-[#0F1A17] text-[#86EFAC]'
+              }`}>
+                {copyBriefError ? 'Copy failed' : 'Copied to clipboard'}
               </div>
             )}
             {showExportPanel && (
@@ -564,6 +606,14 @@ export default function ImpactAnalysis({
                     className={`rounded-md border border-[#2D3450] hover:border-[#7B6FD4] px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
                   >
                     {exportActionState === 'copied' ? 'Copied' : 'Copy link'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      void handleCopyExecutiveBrief();
+                    }}
+                    className={`rounded-md border border-[#2D3450] hover:border-[#7B6FD4] px-2.5 py-1.5 text-[11px] text-[#A8B4C8] hover:text-[#EDF0F7] transition-all ${btnFocus}`}
+                  >
+                    Copy executive brief
                   </button>
                 </div>
               </div>
@@ -595,43 +645,6 @@ export default function ImpactAnalysis({
             />
           </div>
 
-          {/* Staging Optimization Scenario */}
-          {isCompare && evalB && (
-            <section className="mt-6 rounded-xl border border-[#7B6FD4]/35 bg-[#14122A] px-4 py-4 shadow-[0_0_0_1px_rgba(123,111,212,0.15),0_8px_24px_rgba(20,18,42,0.45)]">
-              <div className="mb-3">
-                <h3 className="text-sm font-semibold text-[#E9E7FF]">Staging Optimization Scenario</h3>
-                <p className="text-[10px] text-[#A8B4C8] mt-0.5">Current vs Optimized staging</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <DeltaCard
-                  label="WFS"
-                  currentVal={Math.round(s.ofs)}
-                  optimizedVal={Math.round(evalB.signals.ofs)}
-                  delta={ofsDelta}
-                />
-                <DeltaCard
-                  label="Cost Impact"
-                  currentVal={formatUSD(s.totalCostImpact)}
-                  optimizedVal={formatUSD(evalB.signals.totalCostImpact)}
-                  delta={costDelta}
-                  unit="K"
-                />
-                <DeltaCard
-                  label="Governance Load"
-                  currentVal={Math.round(s.governanceLoad)}
-                  optimizedVal={Math.round(evalB.signals.governanceLoad)}
-                  delta={govDelta}
-                />
-                <DeltaCard
-                  label="Execution Risk"
-                  currentVal={Math.round(s.executionClusterRisk)}
-                  optimizedVal={Math.round(evalB.signals.executionClusterRisk)}
-                  delta={exDelta}
-                />
-              </div>
-            </section>
-          )}
-
           {evaluation.stagingSuggestion && (
             <div className="rounded-xl border border-[#C4B5FD]/25 bg-[#14122A] px-4 py-3">
               <div className="text-[10px] text-[#C4B5FD] uppercase tracking-wider font-medium mb-1.5">
@@ -647,34 +660,47 @@ export default function ImpactAnalysis({
                 <h3 className="text-sm font-semibold text-[#D1FAE5]">Impact of sequencing</h3>
                 <p className="text-[10px] text-[#7A8AA3] mt-0.5">Modeled scenario · Illustrative only</p>
               </div>
-              <span className="text-[10px] rounded-full bg-[#4ADE9A]/15 border border-[#4ADE9A]/35 px-2 py-0.5 text-[#86EFAC]">
-                −28% exposure · {reducedBreaches} fewer breaches
-              </span>
+              {sequencingApplied ? (
+                <span className="text-[10px] rounded-full bg-[#2D3450]/45 border border-[#2D3450] px-2 py-0.5 text-[#C7D2FE]">
+                  Sequencing applied
+                </span>
+              ) : (
+                <span className="text-[10px] rounded-full bg-[#4ADE9A]/15 border border-[#4ADE9A]/35 px-2 py-0.5 text-[#86EFAC]">
+                  −{exposureReductionPct}% exposure · {reducedBreaches} fewer breaches
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="rounded-lg border border-[#2D3450] bg-[#141829] px-3 py-2">
                 <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider mb-1">Current trajectory</div>
                 <div className="space-y-1 text-xs text-[#EDF0F7]">
-                  <div className="flex justify-between"><span>Exposure:</span><span>{formatSignalNumber(currentExposure)}</span></div>
-                  <div className="flex justify-between"><span>Threshold breaches:</span><span>{currentBreaches}</span></div>
-                  <div className="flex justify-between"><span>WFS:</span><span>{currentWFS}</span></div>
+                  <div className="flex justify-between"><span>Exposure:</span><span>{formatSignalNumber(currentTrajectoryExposure)}</span></div>
+                  <div className="flex justify-between"><span>Threshold breaches:</span><span>{currentTrajectoryBreaches}</span></div>
+                  <div className="flex justify-between"><span>WFS:</span><span>{currentTrajectoryWFS}</span></div>
                 </div>
               </div>
               <div className="rounded-lg border border-[#2D3450] bg-[#141829] px-3 py-2">
                 <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider mb-1">Recommended sequencing</div>
                 <div className="space-y-1 text-xs text-[#EDF0F7]">
-                  <div className="flex justify-between"><span>Exposure:</span><span>{formatSignalNumber(recommendedExposure)}</span></div>
-                  <div className="flex justify-between"><span>Threshold breaches:</span><span>{recommendedBreaches}</span></div>
-                  <div className="flex justify-between"><span>WFS:</span><span>{recommendedWFS}</span></div>
+                  <div className="flex justify-between"><span>Exposure:</span><span>{formatSignalNumber(panelRecommendedExposure)}</span></div>
+                  <div className="flex justify-between"><span>Threshold breaches:</span><span>{panelRecommendedBreaches}</span></div>
+                  <div className="flex justify-between"><span>WFS:</span><span>{panelRecommendedWFS}</span></div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => setShowSequencingConfirm(true)}
-                    className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition-all ${btnFocus}`}
-                    style={{ background: 'linear-gradient(135deg, #7B6FD4 0%, #5F54B0 100%)' }}
-                  >
-                    Apply recommended sequencing →
-                  </button>
+                  {!sequencingApplied && (
+                    <button
+                      onClick={() => setShowSequencingConfirm(true)}
+                      className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition-all ${btnFocus}`}
+                      style={{ background: 'linear-gradient(135deg, #7B6FD4 0%, #5F54B0 100%)' }}
+                    >
+                      Apply recommended sequencing →
+                    </button>
+                  )}
+                  {sequencingApplied && (
+                    <span className="text-[11px] rounded-md border border-[#4ADE9A]/35 bg-[#0F1A17] px-2.5 py-1 text-[#86EFAC]">
+                      Sequencing applied
+                    </span>
+                  )}
                   <button
                     onClick={() => setShowSequencingWhy((prev) => !prev)}
                     className={`text-[11px] text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/35 hover:border-[#7B6FD4] rounded-lg px-2.5 py-1.5 transition-all ${btnFocus}`}
@@ -689,6 +715,11 @@ export default function ImpactAnalysis({
                 <div className="text-[10px] text-[#A8B4C8] uppercase tracking-wider font-medium mb-1.5">
                   Why this sequencing
                 </div>
+                {sequencingApplied && (
+                  <p className="text-[11px] text-[#86EFAC] mb-2">
+                    Applied plan updated the staged scenario to the recommended ordering and timing.
+                  </p>
+                )}
                 <ul className="space-y-1">
                   {sequencingReasons.map((reason) => (
                     <li key={reason} className="text-xs text-[#A8B4C8] leading-relaxed flex items-start gap-1.5">
@@ -866,7 +897,7 @@ export default function ImpactAnalysis({
         <DecisionPrioritiesPanel weights={weights} onWeightChange={onWeightChange} />
 
         {/* WFS Formula Breakdown */}
-        <OFSFormulaTable evaluation={evaluation} liveOFS={liveOFS} />
+        <OFSFormulaTable evaluation={evaluation} liveOFS={liveOFS} weights={weights} />
 
         <button
           onClick={() => setShowTechnicalDetail((prev) => !prev)}
