@@ -8,6 +8,7 @@ import ImpactAnalysis from '@/components/deel/ImpactAnalysis';
 import DecisionAssistant from '@/components/deel/DecisionAssistant';
 import ArchitectureModal from '@/components/deel/ArchitectureModal';
 import ExplainabilityDrawer from '@/components/deel/ExplainabilityDrawer';
+import MobileGate from '@/components/deel/MobileGate';
 import { applySequencingToEvaluation, computeWFS } from '@/lib/wfs';
 
 // ── Scenario presets ──────────────────────────────────────────────────────────
@@ -220,7 +221,8 @@ export default function DeelPage() {
   }, [evaluation, requestExecBrief]);
 
   return (
-    <div className="h-screen flex flex-col bg-[#0A0C14] overflow-hidden">
+    <MobileGate>
+      <div className="h-screen flex flex-col bg-[#0A0C14] overflow-hidden">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="flex-shrink-0 h-12 border-b border-[#1E2235] flex items-center justify-between px-4 gap-4 bg-[#0F1117]">
         <div className="flex items-center gap-3 min-w-0">
@@ -363,6 +365,7 @@ export default function DeelPage() {
         evidence={evaluation?.evidence ?? []}
         filterPolicyIds={explainabilityFilter}
       />
-    </div>
+      </div>
+    </MobileGate>
   );
 }
