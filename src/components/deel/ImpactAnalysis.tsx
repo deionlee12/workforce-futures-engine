@@ -45,6 +45,37 @@ function formatDecisionLogId(logId: number): string {
   return `LOG-${String(logId).padStart(3, '0')}`;
 }
 
+type WorkflowStepItem = ScenarioEvaluation['workflow'][number];
+
+function getWorkflowStepDurationDays(step: WorkflowStepItem): number {
+  const withVariants = step as WorkflowStepItem & { days?: number; durationDays?: number };
+  const raw = withVariants.daysRequired ?? withVariants.durationDays ?? withVariants.days ?? 0;
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.round(raw));
+}
+
+function buildExecutionRoadmapRows(steps: WorkflowStepItem[]): Array<{
+  stepId: string;
+  title: string;
+  owner?: string;
+  startOffset: number;
+  durationDays: number;
+}> {
+  let runningOffset = 0;
+  return steps.map((step) => {
+    const durationDays = getWorkflowStepDurationDays(step);
+    const row = {
+      stepId: step.stepId,
+      title: step.title,
+      owner: step.owner,
+      startOffset: runningOffset,
+      durationDays,
+    };
+    runningOffset += durationDays;
+    return row;
+  });
+}
+
 const btnFocus =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6FD4] ' +
   'focus-visible:ring-offset-1 focus-visible:ring-offset-[#0F1117]';
@@ -254,6 +285,78 @@ function WorkflowTimeline({ steps }: { steps: ScenarioEvaluation['workflow'] }) 
   );
 }
 
+function ExecutionRoadmapCard({
+  rows,
+  expanded,
+  onToggle,
+  emptyMessage,
+  panelId,
+}: {
+  rows: Array<{
+    stepId: string;
+    title: string;
+    owner?: string;
+    startOffset: number;
+    durationDays: number;
+  }>;
+  expanded: boolean;
+  onToggle: () => void;
+  emptyMessage: string;
+  panelId: string;
+}) {
+  const totalCompletionDay = rows.reduce((sum, row) => sum + row.durationDays, 0);
+
+  return (
+    <section className="rounded-xl border border-[#2D3450] bg-[#141829] px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[#EDF0F7] text-sm font-semibold">Execution roadmap (illustrative)</h3>
+          <p className="text-[10px] text-[#8899B2] mt-0.5">Deterministic workflow sequence</p>
+        </div>
+        <button
+          onClick={onToggle}
+          className={`text-[11px] text-[#C4B5FD] hover:text-[#D4C5FD] border border-[#7B6FD4]/35 hover:border-[#7B6FD4] rounded-md px-2.5 py-1.5 transition-all ${btnFocus}`}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+        >
+          {expanded ? 'Hide roadmap ▴' : 'Show roadmap ▾'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div id={panelId} className="mt-3">
+          {rows.length === 0 ? (
+            <p className="text-xs text-[#A8B4C8]">{emptyMessage}</p>
+          ) : (
+            <div className="space-y-2.5">
+              {rows.map((row) => (
+                <div
+                  key={row.stepId}
+                  className="rounded-lg border border-[#2D3450] bg-[#1A1F35] px-3 py-2 flex items-start justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs text-[#EDF0F7] font-medium leading-tight">{row.title}</div>
+                    {row.owner && (
+                      <div className="text-[10px] text-[#8899B2] mt-0.5">{row.owner}</div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-[10px] text-[#C4B5FD] font-semibold tabular-nums">D+{row.startOffset}</div>
+                    <div className="text-[10px] text-[#A8B4C8] tabular-nums">{row.durationDays}d</div>
+                  </div>
+                </div>
+              ))}
+              <div className="pt-1 text-[11px] text-[#A8B4C8]">
+                Estimated completion: <span className="text-[#EDF0F7] font-semibold tabular-nums">D+{totalCompletionDay}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ── WFS Formula Table ──────────────────────────────────────────────────────────
 
 function OFSFormulaTable({
@@ -346,6 +449,7 @@ export default function ImpactAnalysis({
   const [showSequencingWhy, setShowSequencingWhy] = useState(false);
   const [showSequencingConfirm, setShowSequencingConfirm] = useState(false);
   const [sequencingToast, setSequencingToast] = useState(false);
+  const [showExecutionRoadmap, setShowExecutionRoadmap] = useState(false);
   const [briefCopyToast, setBriefCopyToast] = useState(false);
   const [copyBriefError, setCopyBriefError] = useState(false);
   const technicalDetailPanelId = 'operator-technical-detail';
@@ -406,6 +510,7 @@ export default function ImpactAnalysis({
   const currentWFS = displayWFS;
   const sequencingApplied = canRevertSequencing;
   const sequencingProjection = deriveSequencingProjection(evaluation, weights);
+  const roadmapRows = buildExecutionRoadmapRows(evaluation.workflow);
   const recommendedExposure = sequencingProjection.exposure;
   const recommendedBreaches = sequencingProjection.breaches;
   const recommendedWFS = sequencingProjection.wfs;
@@ -778,6 +883,16 @@ export default function ImpactAnalysis({
             )}
             <p className="text-[10px] text-[#8899B2] italic mt-2">Sequencing model · Modeled delta · Not a guarantee</p>
           </section>
+
+          {roadmapRows.length > 0 && (
+            <ExecutionRoadmapCard
+              rows={roadmapRows}
+              expanded={showExecutionRoadmap}
+              onToggle={() => setShowExecutionRoadmap((prev) => !prev)}
+              emptyMessage="Run an impact evaluation to generate an execution roadmap."
+              panelId="execution-roadmap-exec-panel"
+            />
+          )}
 
           <section className="rounded-xl border border-[#2D3450] bg-[#141829] px-4 py-3 text-[12px]">
             <div className="flex items-center justify-between gap-2 mb-2">
